@@ -31,6 +31,7 @@ def run_kitchen_example(
     semantic_segmentation: bool = False,
     resolution=(1024, 768),
     focal_length: float | None = None,
+    output_dir: str = "/workspace/output/studyroom_desk_move/3_items",
 ):
     """
     Headless 版本的厨房场景示例
@@ -108,7 +109,7 @@ def run_kitchen_example(
 
     # 5. BasicWriter：输出到 /workspace/output/kitchen_headless
     writer = rep.writers.get("BasicWriter")
-    out_dir = Path("/workspace/output/studyroom_desk_move/3_items")
+    out_dir = Path(output_dir)
 
     # 6. 从指定 prim 列表中收集有效 prim，并在每个 pair 内进行随机采样
     def find_valid_target_prims():
@@ -1462,6 +1463,7 @@ if __name__ == "__main__":
     parser.add_argument("--width", type=int, default=1024, help="Image width")
     parser.add_argument("--height", type=int, default=768, help="Image height")
     parser.add_argument("--focal-length", type=float, default=None, help="Camera focal length (optional)")
+    parser.add_argument("--output-dir", type=str, default="/workspace/output/studyroom_desk_move/3_items", help="Output directory")
     args = parser.parse_args()
 
     run_kitchen_example(
@@ -1472,5 +1474,6 @@ if __name__ == "__main__":
         semantic_segmentation=args.semantic_segmentation,
         resolution=(args.width, args.height),
         focal_length=args.focal_length,
+        output_dir=args.output_dir,
     )
     simulation_app.close()

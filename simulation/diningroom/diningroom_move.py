@@ -1,8 +1,8 @@
-# Headless 版本 - 基于 kitchen_test_editor.py 改编
+# Headless 版本 - 基于模板脚本改编
 # 适合在容器/无 GUI 环境中运行
-# 使用 ./python.sh kitchen_test_headless.py 运行
-# 特性：随机化3个瓶子 prims，在两个柜台平面上放置
-# pair 差异通过不同的随机化位置和瓶子倒伏状态体现
+# 使用 ./python.sh diningroom_move.py 运行
+# 特性：随机化 diningroom 指定 prims，在多个平面上放置
+# pair 差异通过 A/B 帧中的目标位移体现
 
 from isaacsim import SimulationApp
 
@@ -23,22 +23,23 @@ import omni.syntheticdata as syn
 import numpy as np
 
 
-def run_kitchen_example(
+def run_diningroom_example(
     pair_count: int = 4,
     warmup_k: int = 3,
     num_changes: int = 1,
+    origin: bool = False,
     semantic_segmentation: bool = False,
     resolution=(1024, 768),
     focal_length: float | None = None,
-    output_dir: str = "/workspace/output/bedroom1_bed_move/3_items",
+    output_dir: str = "/workspace/output/diningroom_move/3_items",
 ):
     """
-    Headless 版本的厨房场景示例
-    只随机化特定的3个瓶子 prims，在柜台平面上
-    每次随机化时会随机决定瓶子是否倒下（绕X轴旋转0或90度）
+    Headless 版本的餐厅场景示例
+    - origin=False: A 帧会在平面内随机放置非 chair 物体，B 帧仅移动抽中的非 chair 物体
+    - origin=True: A 帧保持当前布局，B 帧仅移动抽中的非 chair 物体
     """
     
-    # 2. 打开厨房场景
+    # 2. 打开 diningroom 场景
     usd_path = "/workspace/assets/kujiale_0003/kujiale_0003.usda"
     print(f" Opening stage: {usd_path}")
     omni.usd.get_context().open_stage(usd_path)
@@ -64,7 +65,7 @@ def run_kitchen_example(
 
     # 3. 配置渲染设置来消除时间累积造成的鬼影
     # RTSubframes: 强制渲染器在每帧重新采样
-    rep.settings.carb_settings("/omni/replicator/RTSubframes", 32)
+    rep.settings.carb_settings("/omni/replicator/RTSubframes", 50)
     print(" RTSubframes set to 16 (to eliminate ghosting)")
 
 
@@ -73,7 +74,7 @@ def run_kitchen_example(
     rep.orchestrator.set_capture_on_play(True)
 
     # 4. 查找场景中已有的 Camera，使用 OmniverseKit_Persp
-    desired_camera = "/Root/bedroom1_bed"
+    desired_camera = "/Root/diningroom"
     camera_list = []
     
     cam_prim = stage.GetPrimAtPath(desired_camera)
@@ -105,32 +106,53 @@ def run_kitchen_example(
                 cam_schema.GetFocalLengthAttr().Set(float(focal_length))
                 print(f" Set focalLength={focal_length} for {cam_path}")
 
-    # 5. BasicWriter：输出到 /workspace/output/kitchen_headless
+    # 5. BasicWriter：输出到 diningroom move 目录
     writer = rep.writers.get("BasicWriter")
     out_dir = Path(output_dir)
 
     # 6. 从指定 prim 列表中收集有效 prim，并在每个 pair 内进行随机采样
     def find_valid_target_prims():
         """返回用户指定列表中所有有效 prim，并按类别分组"""
-        pillow_prims = [
-            "/Root/Meshes/bedroom_767840/pillow_0006",
-            "/Root/Meshes/bedroom_767840/pillow_0005",
-            "/Root/Meshes/bedroom_767840/pillow_0004",
-            "/Root/Meshes/bedroom_767840/pillow_0008",
-            "/Root/Meshes/bedroom_767840/pillow_0007",
+        glass_prims = [
+            "/Root/Meshes/livingroom_767839/wine_glass_0000",
         ]
 
-        # 预留给 lamp 的 prim 列表（后续可直接补充）
-        lamp_prims = [
-            "/Root/Meshes/bedroom_767840/table_lamp_0000",
-            "/Root/Meshes/bedroom_767840/table_lamp_0001",
+        kettle_prims = [
+            "/Root/Meshes/kitchen_914234340/kettle_0000",
         ]
+
+        cookware_prims = [
+            "/Root/Meshes/kitchen_914234340/cookware_0000",
+        ]
+
+        plate_prims = [
+            "/Root/Meshes/livingroom_767839/plate_0000",
+        ]
+
+        blender_prims = [
+            "/Root/Meshes/kitchen_914234340/blender_0000",
+        ]
+
+        chair_prims = [ 
+            "/Root/Meshes/livingroom_767839/chair_0002",
+            "/Root/Meshes/livingroom_767839/chair_0003",
+            "/Root/Meshes/livingroom_767839/chair_0004",
+            "/Root/Meshes/livingroom_767839/chair_0005",
+            "/Root/Meshes/livingroom_767839/chair_0006",
+        ]
+
+
 
         prim_groups = {
-            "pillow": pillow_prims,
-            "lamp": lamp_prims,
+            "chair": chair_prims,
+            "glass": glass_prims,
+            "kettle": kettle_prims,
+            "cookware": cookware_prims,
+            "plate": plate_prims,
+            "blender": blender_prims,
         }
 
+        # 验证这些 prims 是否存在
         valid_prim_groups = {}
         for label, prim_list in prim_groups.items():
             valid_prims = []
@@ -221,7 +243,7 @@ def run_kitchen_example(
     # 8. 为 randomize 的物体添加语义标签（用于 instance/semantic segmentation）
     def add_semantic_labels(prim_label_map):
         """
-        为指定的 prims 添加语义标签（pillow/lamp）
+        为指定的 prims 添加语义标签（按 prim_groups 的类别设置）
         同时使用两种方式确保兼容性：
         1. 直接使用 USD primvars 写入语义属性（立即生效）
         2. 使用 rep.modify.semantics（用于 Replicator graph）
@@ -260,7 +282,7 @@ def run_kitchen_example(
             if not prim or not prim.IsValid():
                 print(f" ❌ Prim not found: {path}")
                 continue
-            
+
             try:
                 # 取消 instanceable，确保可以写 primvars
                 if prim.IsInstanceable():
@@ -308,18 +330,26 @@ def run_kitchen_example(
 
     # 9. 查找并验证 prims
     valid_prim_groups = find_valid_target_prims()
-    valid_pillow_paths = valid_prim_groups.get("pillow", [])
-    valid_lamp_paths = valid_prim_groups.get("lamp", [])
-
-    # move 仅对 pillow 生效
-    valid_candidate_paths = valid_pillow_paths
+    valid_candidate_paths = []
+    path_label_map = {}
+    for label, paths in valid_prim_groups.items():
+        valid_candidate_paths.extend(paths)
+        for p in paths:
+            path_label_map[p] = label
+    non_chair_randomize_candidate_paths = []
+    for label, paths in valid_prim_groups.items():
+        if label != "chair":
+            non_chair_randomize_candidate_paths.extend(paths)
 
     if not valid_candidate_paths:
-        print(" No valid pillow prims were found; cannot proceed.")
+        print(" No specified prims were found; cannot proceed.")
         return
+    group_count_msg = ", ".join(
+        f"{label}={len(paths)}" for label, paths in valid_prim_groups.items()
+    )
     print(
-        f" Found {len(valid_candidate_paths)} valid pillow prims for move, "
-        f"{len(valid_lamp_paths)} lamp prims reserved (not moved)"
+        f" Found {len(valid_candidate_paths)} valid prims "
+        f"({group_count_msg})"
     )
 
     # 9.1 解析可移动的 prim（通过 bbox 变化判断）
@@ -404,98 +434,27 @@ def run_kitchen_example(
         print(" No movable prims resolved; cannot proceed.")
         return
 
+    # 除 chair 外，其他类别都参与随机放置；chair 保持当前位置
+    non_chair_prim_path_map = {
+        path: prim_path_map[path]
+        for path in non_chair_randomize_candidate_paths
+        if path in prim_path_map
+    }
+    print(f" Non-chair prims for plane randomization: {len(non_chair_prim_path_map)}")
+
     reverse_prim_map = {movable: orig for orig, movable in prim_path_map.items()}
     movable_paths = list(prim_path_map.values())
     
     # 移除这些 prim 的物理碰撞体（如果有）
     remove_collision_from_bottles(valid_candidate_paths)
     
-    # 语义标签：pillow/lamp 分类
-    prim_label_map = {path: "pillow" for path in valid_pillow_paths}
-    prim_label_map.update({path: "lamp" for path in valid_lamp_paths})
-    added = add_semantic_labels(prim_label_map)
+    # 应用语义标签到所有待随机化的物体
+    added = add_semantic_labels(path_label_map)
     print(f" Semantic labels added: {added} prims labeled")
-
-    def capture_initial_pose_map(prim_paths, prim_map=None):
-        """记录 prim 的初始 translate/rotate 值，用于每个 pair 的 A 帧恢复。"""
-        pose_map = {}
-        for path in prim_paths:
-            target_path = prim_map.get(path, path) if prim_map else path
-            prim = stage.GetPrimAtPath(target_path)
-            if not prim or not prim.IsValid():
-                continue
-
-            xformable = UsdGeom.Xformable(prim)
-            if not xformable:
-                continue
-
-            translate_val = None
-            rotate_val = None
-            for op in xformable.GetOrderedXformOps():
-                if op.GetOpType() == UsdGeom.XformOp.TypeTranslate and translate_val is None:
-                    translate_val = op.Get()
-                elif op.GetOpType() == UsdGeom.XformOp.TypeRotateXYZ and rotate_val is None:
-                    rotate_val = op.Get()
-
-            if translate_val is not None:
-                translate_val = Gf.Vec3d(translate_val[0], translate_val[1], translate_val[2])
-            else:
-                translate_val = Gf.Vec3d(0.0, 0.0, 0.0)
-
-            if rotate_val is not None:
-                rotate_val = Gf.Vec3f(rotate_val[0], rotate_val[1], rotate_val[2])
-            else:
-                rotate_val = Gf.Vec3f(0.0, 0.0, 0.0)
-
-            pose_map[target_path] = {
-                "translate": translate_val,
-                "rotate": rotate_val,
-            }
-        return pose_map
-
-    def restore_pose_map(pose_map, prim_display_map=None):
-        """恢复 prim 到记录的初始位姿。"""
-        for target_path, pose in pose_map.items():
-            prim = stage.GetPrimAtPath(target_path)
-            if not prim or not prim.IsValid():
-                continue
-
-            xformable = UsdGeom.Xformable(prim)
-            if not xformable:
-                continue
-
-            ops = xformable.GetOrderedXformOps()
-            translate_op = None
-            rotate_op = None
-            for op in ops:
-                if op.GetOpType() == UsdGeom.XformOp.TypeTranslate and translate_op is None:
-                    translate_op = op
-                elif op.GetOpType() == UsdGeom.XformOp.TypeRotateXYZ and rotate_op is None:
-                    rotate_op = op
-
-            if translate_op is None:
-                translate_op = xformable.AddTranslateOp(UsdGeom.XformOp.PrecisionDouble)
-            if rotate_op is None:
-                rotate_op = xformable.AddRotateXYZOp(UsdGeom.XformOp.PrecisionFloat)
-
-            translate_op.Set(pose["translate"])
-            rotate_op.Set(pose["rotate"])
-
-            display_name = prim_display_map.get(target_path, target_path) if prim_display_map else target_path
-            print(
-                f"[Restore] {display_name}: "
-                f"translate=({pose['translate'][0]:.3f}, {pose['translate'][1]:.3f}, {pose['translate'][2]:.3f}), "
-                f"rotate=({pose['rotate'][0]:.3f}, {pose['rotate'][1]:.3f}, {pose['rotate'][2]:.3f})"
-            )
-
-    initial_pose_map = capture_initial_pose_map(valid_candidate_paths, prim_path_map)
-    print(f" Captured initial poses for {len(initial_pose_map)} pillow prims")
 
     # 10. 使用指定的平面进行随机放置
     cabinet_prims = [
-        "Root/bedroom1_bed_plane1",
-        "Root/bedroom1_bed_plane2",
-        "Root/bedroom1_bed_plane3",
+        "Root/diningroom_plane",
     ]
 
     def normalize_prim_path(path: str) -> str:
@@ -847,7 +806,7 @@ def run_kitchen_example(
     # 11.6 纯 USD API 随机化函数（完全控制，不依赖 Replicator trigger）
     import random as py_random
     
-    def manual_randomize_objects(prim_path_map, bounds_list):
+    def manual_randomize_objects(prim_path_map, bounds_list, initial_points_by_surface=None):
         """
         使用纯 USD API 随机化物体位置和旋转
         每个物体随机选择一个平面，然后在该平面范围内放置
@@ -855,11 +814,20 @@ def run_kitchen_example(
         Args:
             prim_path_map: {original_path: movable_path}
             bounds_list: 表面范围列表 [(min_x, max_x, min_y, max_y, surface_z), ...]
+            initial_points_by_surface: 可选，预先占用点
+                {surface_idx: [(x, y), ...]}，用于避免与已存在物体重叠
         
         Returns:
             dict: {prim_path: surface_z} 每个物体被放到的平面 Z 高度
         """
         prim_surface_z_map = {}
+        # 记录每个表面已放置的 (x, y)，用于最小间距约束
+        placed_points_by_surface = {idx: [] for idx in range(len(bounds_list))}
+        if initial_points_by_surface:
+            for idx in range(len(bounds_list)):
+                pts = initial_points_by_surface.get(idx, [])
+                placed_points_by_surface[idx] = list(pts)
+        max_position_attempts = 40
         
         if not bounds_list:
             print(f"[Manual-Rand] ❌ 没有有效的表面范围")
@@ -880,16 +848,63 @@ def run_kitchen_example(
                 continue
             
             # 随机选择一个平面
-            selected_bounds = py_random.choice(bounds_list)
-            min_x, max_x, min_y, max_y, surface_z = selected_bounds
-            surface_idx = bounds_list.index(selected_bounds)
+            surface_idx = py_random.randrange(len(bounds_list))
+            min_x, max_x, min_y, max_y, surface_z = bounds_list[surface_idx]
             
             # 记录这个物体被放到的表面 Z 高度
             prim_surface_z_map[move_path] = surface_z
             
-            # 随机生成位置（在选中的平面范围内）
-            rand_x = py_random.uniform(min_x, max_x)
-            rand_y = py_random.uniform(min_y, max_y)
+            # 随机生成位置（在选中的平面范围内），并约束与已放置物体的最小间距
+            range_x = max_x - min_x
+            range_y = max_y - min_y
+            # 固定最小 2D 间距为 5cm（假设场景单位为米）
+            min_spacing = 0.1
+            existing_points = placed_points_by_surface[surface_idx]
+
+            rand_x = None
+            rand_y = None
+            used_attempts = 0
+            best_candidate = None
+            best_candidate_min_dist = -1.0
+
+            for attempt in range(1, max_position_attempts + 1):
+                cand_x = py_random.uniform(min_x, max_x)
+                cand_y = py_random.uniform(min_y, max_y)
+                used_attempts = attempt
+
+                if not existing_points:
+                    rand_x, rand_y = cand_x, cand_y
+                    break
+
+                dists = [
+                    ((cand_x - ex_x) ** 2 + (cand_y - ex_y) ** 2) ** 0.5
+                    for ex_x, ex_y in existing_points
+                ]
+                nearest_dist = min(dists) if dists else float("inf")
+
+                if nearest_dist >= min_spacing:
+                    rand_x, rand_y = cand_x, cand_y
+                    break
+
+                if nearest_dist > best_candidate_min_dist:
+                    best_candidate_min_dist = nearest_dist
+                    best_candidate = (cand_x, cand_y)
+
+            if rand_x is None or rand_y is None:
+                if best_candidate is not None:
+                    rand_x, rand_y = best_candidate
+                    print(
+                        f"[Manual-Rand] ⚠️ {orig_path}: {max_position_attempts} 次尝试后仍无法满足最小间距 "
+                        f"(target={min_spacing:.3f}, best={best_candidate_min_dist:.3f})，使用最优候选点"
+                    )
+                else:
+                    rand_x = py_random.uniform(min_x, max_x)
+                    rand_y = py_random.uniform(min_y, max_y)
+                    print(
+                        f"[Manual-Rand] ⚠️ {orig_path}: 没有可用候选点记录，回退到普通随机采样"
+                    )
+
+            placed_points_by_surface[surface_idx].append((rand_x, rand_y))
             # 直接强制 Z，不依赖 bbox 补偿
             rand_z = surface_z
             
@@ -929,11 +944,17 @@ def run_kitchen_example(
             in_range_x = min_x <= rand_x <= max_x
             in_range_y = min_y <= rand_y <= max_y
             if not in_range_x or not in_range_y:
-                print(f"[Manual-Rand] ❌ {path}: 位置超出范围!")
+                print(f"[Manual-Rand] ❌ {orig_path}: 位置超出范围!")
                 print(f"[Manual-Rand]   bounds: X=[{min_x:.2f}, {max_x:.2f}], Y=[{min_y:.2f}, {max_y:.2f}]")
                 print(f"[Manual-Rand]   pos: X={rand_x:.2f} {'✓' if in_range_x else '❌'}, Y={rand_y:.2f} {'✓' if in_range_y else '❌'}")
             
-            print(f"[Manual-Rand] ✓ {orig_path}: 平面{surface_idx}(Z={surface_z:.2f}), bounds=X[{min_x:.2f},{max_x:.2f}],Y[{min_y:.2f},{max_y:.2f}], pos=({rand_x:.2f}, {rand_y:.2f}, {rand_z:.2f}), rot=({rand_rot_x}, {rand_rot_y}, {rand_rot_z:.0f}) [{state}]")
+            print(
+                f"[Manual-Rand] ✓ {orig_path}: 平面{surface_idx}(Z={surface_z:.2f}), "
+                f"bounds=X[{min_x:.2f},{max_x:.2f}],Y[{min_y:.2f},{max_y:.2f}], "
+                f"pos=({rand_x:.2f}, {rand_y:.2f}, {rand_z:.2f}), "
+                f"rot=({rand_rot_x}, {rand_rot_y}, {rand_rot_z:.0f}) [{state}], "
+                f"min_spacing={min_spacing:.3f}, attempts={used_attempts}"
+            )
         
         print(f"[Manual-Rand] ========== 随机化完成 ==========\n")
         return prim_surface_z_map
@@ -951,17 +972,20 @@ def run_kitchen_example(
         # 先运行暖机帧来刷新时间缓存（移除原始位置的残影）
         # warmup 帧数 = 3 * warmup_k，确保是 3 的倍数
         warmup_frames = 3 * warmup_k
-        print(f" Running {warmup_frames} warmup frames (k={warmup_k}) with randomization...")
+        if origin:
+            print(f" Running {warmup_frames} warmup frames (k={warmup_k}) in origin mode (no reposition).")
+        else:
+            print(f" Running {warmup_frames} warmup frames (k={warmup_k}) with randomization...")
         rep.orchestrator.set_capture_on_play(False)
         
-        # 在 warmup 期间，直接用 USD API 移动瓶子到随机位置
+        # 在 warmup 期间，直接用 USD API 移动物体到随机位置
         # 这样可以刷掉原始位置的时间缓存
         # 每 3 帧移动一次，共移动 warmup_k 次
         import random as py_random
         for warmup_i in range(warmup_frames):
-            # 每隔 3 帧移动一次瓶子，刷新缓存
-            if warmup_i % 3 == 0:
-                for path in valid_candidate_paths:
+            # 每隔 3 帧移动一次物体，刷新缓存
+            if (not origin) and warmup_i % 3 == 0:
+                for path in non_chair_randomize_candidate_paths:
                     target_path = prim_path_map.get(path, path)
                     prim = stage.GetPrimAtPath(target_path)
                     if prim:
@@ -982,7 +1006,10 @@ def run_kitchen_example(
                                     break
             rep.orchestrator.step()
         
-        print(f" Warmup done, original positions flushed from cache.")
+        if origin:
+            print(f" Warmup done in origin mode (positions preserved).")
+        else:
+            print(f" Warmup done, original positions flushed from cache.")
 
         # 诊断：直接从 annotator 拉取一帧分割数据，确认非零
         def log_annotator_sample(render_prod):
@@ -1042,15 +1069,15 @@ def run_kitchen_example(
         # 创建 pair 计划
         total_frames = pair_count * 2
         pair_records = []
-        pair_selected_paths = {}
         
         for pair_idx in range(pair_count):
             pair_records.append({
-                "scene_type": "bedroom1_bed",
+                "scene_type": "diningroom",
                 "change_type": "move",
                 "pair_id": f"pair_{pair_idx:04d}",
                 "camera": cam_path,
                 "num_changes": 0,
+                "selected_prims": [],
                 "coordinates": {},  # 将在渲染时填充
             })
 
@@ -1177,67 +1204,77 @@ def run_kitchen_example(
             
             return coords_2d
 
-        def write_pair_outputs_immediately(pair_idx, coords_a, coords_b, coords_2d_a, coords_2d_b):
+        def set_prims_visibility(prim_paths, visible: bool, prim_map=None):
             """
-            每个 pair 生成后立即整理写盘，避免必须等全部 pair 完成。
+            设置 prim 可见性。
+            - visible=True: 显示
+            - visible=False: 隐藏
             """
-            import shutil
+            changed = []
+            for path in prim_paths:
+                target_path = prim_map.get(path, path) if prim_map else path
+                prim = stage.GetPrimAtPath(target_path)
+                if not prim or not prim.IsValid():
+                    print(f" Warning: Prim not found for visibility toggle: {target_path}")
+                    continue
+                if not prim.IsA(UsdGeom.Imageable):
+                    print(f" Warning: Prim is not Imageable: {target_path}")
+                    continue
 
-            record = pair_records[pair_idx]
-            pair_dir = cam_out_dir / record["pair_id"]
-            pair_dir.mkdir(parents=True, exist_ok=True)
+                imageable = UsdGeom.Imageable(prim)
+                if visible:
+                    imageable.MakeVisible()
+                else:
+                    imageable.MakeInvisible()
+                changed.append(path)
+            return changed
 
-            selected_paths_for_pair = pair_selected_paths.get(pair_idx, [])
-            for prim_path in selected_paths_for_pair:
-                record["coordinates"][prim_path] = {
-                    "world_coordinate_A": coords_a.get(prim_path, None),
-                    "world_coordinate_B": coords_b.get(prim_path, None),
-                    "pixel_center_A": coords_2d_a.get(prim_path, None),
-                    "pixel_center_B": coords_2d_b.get(prim_path, None),
-                }
+        def get_translate_xy_for_path(path, prim_map=None):
+            target_path = prim_map.get(path, path) if prim_map else path
+            prim = stage.GetPrimAtPath(target_path)
+            if not prim or not prim.IsValid():
+                return None
+            xformable = UsdGeom.Xformable(prim)
+            if not xformable:
+                return None
+            for op in xformable.GetOrderedXformOps():
+                if op.GetOpType() == UsdGeom.XformOp.TypeTranslate:
+                    pos = op.Get()
+                    if pos is not None:
+                        return float(pos[0]), float(pos[1])
+            return None
 
-            # 等待当前 pair 的 A/B 两帧真正落盘
-            rep.orchestrator.wait_until_complete()
+        def infer_surface_idx_from_xy(x, y, bounds_list):
+            # 优先匹配所在范围；如果不在任何范围内，回退到最近表面中心
+            for idx, (min_x, max_x, min_y, max_y, _) in enumerate(bounds_list):
+                if min_x <= x <= max_x and min_y <= y <= max_y:
+                    return idx
 
-            frame_a_idx = pair_idx * 2
-            frame_b_idx = pair_idx * 2 + 1
+            best_idx = None
+            best_dist = float("inf")
+            for idx, (min_x, max_x, min_y, max_y, _) in enumerate(bounds_list):
+                cx = (min_x + max_x) * 0.5
+                cy = (min_y + max_y) * 0.5
+                dist = ((x - cx) ** 2 + (y - cy) ** 2) ** 0.5
+                if dist < best_dist:
+                    best_dist = dist
+                    best_idx = idx
+            return best_idx
 
-            rgb_frames = sorted(raw_dir.glob("rgb_*.png"))
-            depth_frames = sorted(raw_dir.glob("distance_to_camera_*.npy"))
-            if not depth_frames:
-                depth_frames = sorted(raw_dir.glob("distance_to_camera_*.png"))
-            instance_frames = sorted(raw_dir.glob("instance_segmentation_*.png"))
-            semantic_frames = sorted(raw_dir.glob("semantic_segmentation_*.png")) if semantic_segmentation else []
-
-            if frame_a_idx < len(rgb_frames) and frame_b_idx < len(rgb_frames):
-                shutil.copy2(rgb_frames[frame_a_idx], pair_dir / "A_rgb.png")
-                shutil.copy2(rgb_frames[frame_b_idx], pair_dir / "B_rgb.png")
-            else:
-                print(
-                    f" ⚠️ Pair {pair_idx}: RGB frames not ready "
-                    f"(need idx {frame_a_idx}/{frame_b_idx}, have {len(rgb_frames)})"
-                )
-
-            if frame_a_idx < len(depth_frames) and frame_b_idx < len(depth_frames):
-                depth_ext = depth_frames[frame_a_idx].suffix
-                shutil.copy2(depth_frames[frame_a_idx], pair_dir / f"A_depth{depth_ext}")
-                shutil.copy2(depth_frames[frame_b_idx], pair_dir / f"B_depth{depth_ext}")
-                if depth_ext == ".npy":
-                    depth_npy_to_png(depth_frames[frame_a_idx], pair_dir / "A_depth.png")
-                    depth_npy_to_png(depth_frames[frame_b_idx], pair_dir / "B_depth.png")
-
-            if frame_a_idx < len(instance_frames) and frame_b_idx < len(instance_frames):
-                shutil.copy2(instance_frames[frame_a_idx], pair_dir / "A_instance_segmentation.png")
-                shutil.copy2(instance_frames[frame_b_idx], pair_dir / "B_instance_segmentation.png")
-
-            if semantic_segmentation and frame_a_idx < len(semantic_frames) and frame_b_idx < len(semantic_frames):
-                shutil.copy2(semantic_frames[frame_a_idx], pair_dir / "A_semantic_segmentation.png")
-                shutil.copy2(semantic_frames[frame_b_idx], pair_dir / "B_semantic_segmentation.png")
-
-            meta_path = pair_dir / "metadata.json"
-            record.pop("selected_prims", None)
-            meta_path.write_text(json.dumps(record, indent=2))
-            print(f" Pair {pair_idx}: metadata and assets written immediately")
+        def collect_fixed_points_by_surface(candidate_paths, exclude_paths, bounds_list, prim_map=None):
+            fixed = {idx: [] for idx in range(len(bounds_list))}
+            exclude_set = set(exclude_paths or [])
+            for path in candidate_paths:
+                if path in exclude_set:
+                    continue
+                xy = get_translate_xy_for_path(path, prim_map)
+                if xy is None:
+                    continue
+                surface_idx = infer_surface_idx_from_xy(xy[0], xy[1], bounds_list)
+                if surface_idx is None:
+                    continue
+                fixed[surface_idx].append((xy[0], xy[1]))
+            return fixed
 
         # 13-15. 直接使用 USD API 随机化，不使用 Replicator trigger
         # 这样我们完全控制何时执行随机化，避免 Z 补偿被覆盖
@@ -1250,87 +1287,240 @@ def run_kitchen_example(
         # 每次随机化后运行 3 帧让渲染器稳定，总共 5 次随机化 = 15 帧
         warmup_randomizations = 5
         warmup_steps_per_rand = 3
-        print(f" Running warmup: {warmup_randomizations} randomizations × {warmup_steps_per_rand} steps = {warmup_randomizations * warmup_steps_per_rand} frames...")
+        if origin:
+            print(
+                f" Running warmup in origin mode: {warmup_randomizations} iterations × "
+                f"{warmup_steps_per_rand} steps (no reposition)"
+            )
+        else:
+            print(f" Running warmup: {warmup_randomizations} randomizations × {warmup_steps_per_rand} steps = {warmup_randomizations * warmup_steps_per_rand} frames...")
         
         # Detach writer 在 warmup 期间，避免捕获这些帧
         writer.detach()
         
         for warmup_i in range(warmup_randomizations):
-            prim_z_map = manual_randomize_objects(prim_path_map, surface_bounds_list)
-            if use_z_compensation:
-                apply_z_compensation(prim_z_map, reverse_prim_map)
+            if origin:
+                set_prims_visibility(valid_candidate_paths, True, prim_path_map)
+            else:
+                prim_z_map = manual_randomize_objects(non_chair_prim_path_map, surface_bounds_list)
+                if use_z_compensation:
+                    apply_z_compensation(prim_z_map, reverse_prim_map)
             # 每次随机化后运行多帧让时间累积刷新
             for _ in range(warmup_steps_per_rand):
                 rep.orchestrator.step()
         
-        # warmup 结束后恢复到初始状态，保证 A 帧是初始场景
-        restore_pose_map(initial_pose_map, reverse_prim_map)
-        for _ in range(6):
-            rep.orchestrator.step()
-
         # 重新 attach writer 开始正式捕获
         writer.attach(render_product)
         print(f" Warmup complete, writer re-attached.")
         
         # 16. 主渲染循环
-        # 每次捕获前先运行几帧刷新时间累积缓存，消除 A/B 帧之间的鬼影
+        # 每帧在捕获前先运行几帧刷新时间累积缓存，消除 A/B 帧之间的鬼影
         flush_frames_before_capture = 6  # 捕获前刷新的帧数（增加到 6 帧）
         print(f" Running main render loop with {total_frames} frames...")
         print(f" Using {flush_frames_before_capture} flush frames before each capture to eliminate ghosting")
-
-        for pair_idx in range(pair_count):
-            sampled_paths = sample_pair_prims(valid_candidate_paths)
-            sampled_prim_map = {p: prim_path_map[p] for p in sampled_paths if p in prim_path_map}
-            sampled_paths = list(sampled_prim_map.keys())
-            pair_selected_paths[pair_idx] = sampled_paths
-            pair_records[pair_idx]["num_changes"] = len(sampled_paths)
-
-            print(f"\n ===== Pair {pair_idx} =====")
-            print(f" Pair {pair_idx}: selected {len(sampled_paths)} pillow prim(s): {sampled_paths}")
-
-            # A 帧：恢复初始状态
-            restore_pose_map(initial_pose_map, reverse_prim_map)
-            writer.detach()
-            for _ in range(flush_frames_before_capture):
-                rep.orchestrator.step()
-            writer.attach(render_product)
-            rep.orchestrator.step()
+        
+        for frame_idx in range(total_frames):
             frame_counter[0] += 1
-            print(f" Pair {pair_idx} Frame A: captured initial state")
+            print(f"\n ===== Frame {frame_idx} =====")
 
-            coords_a = get_world_coordinates(sampled_paths, sampled_prim_map)
-            coords_2d_a = get_2d_center_coordinates_from_projection(
-                sampled_paths, cam_path, resolution[0], resolution[1], sampled_prim_map
-            )
-            frame_coordinates.append(coords_a)
-            frame_2d_coordinates.append(coords_2d_a)
+            # 每个 pair（A/B 两帧）重新采样一次待移动 prim 集合（仅非 chair）
+            pair_idx = frame_idx // 2
+            if frame_idx % 2 == 0:
+                sampled_paths = sample_pair_prims(list(non_chair_prim_path_map.keys()))
+                sampled_paths = [p for p in sampled_paths if p in prim_path_map]
+                pair_records[pair_idx]["selected_prims"] = sampled_paths
+                pair_records[pair_idx]["num_changes"] = len(sampled_paths)
+                print(f" Pair {pair_idx}: selected {len(sampled_paths)} non-chair prim(s) to move in B: {sampled_paths}")
 
-            # B 帧：仅对抽中的 pillow 做 move
-            if sampled_prim_map:
-                prim_z_map = manual_randomize_objects(sampled_prim_map, surface_bounds_list)
+                # A 帧：确保所有受控物体可见，再进行正常随机化
+                set_prims_visibility(valid_candidate_paths, True, prim_path_map)
+                tracked_paths = list(prim_path_map.keys())
+                tracked_prim_map = prim_path_map
+
+                if origin:
+                    print(f" Pair {pair_idx}: A frame keeps original layout (origin mode)")
+                else:
+                    # A 随机化除 chair 外的类别；chair 保持当前原位
+                    prim_z_map = manual_randomize_objects(non_chair_prim_path_map, surface_bounds_list)
+                    if use_z_compensation:
+                        apply_z_compensation(prim_z_map, reverse_prim_map)
+            else:
+                sampled_paths = pair_records[pair_idx].get("selected_prims", [])
+                tracked_paths = list(prim_path_map.keys())
+                tracked_prim_map = prim_path_map
+                moving_map = {
+                    p: prim_path_map[p]
+                    for p in sampled_paths
+                    if p in prim_path_map
+                }
+                fixed_points = collect_fixed_points_by_surface(
+                    candidate_paths=list(non_chair_prim_path_map.keys()),
+                    exclude_paths=sampled_paths,
+                    bounds_list=surface_bounds_list,
+                    prim_map=prim_path_map,
+                )
+                # B 帧：只移动抽中的物体，并避开未移动物体的位置
+                prim_z_map = manual_randomize_objects(
+                    moving_map,
+                    surface_bounds_list,
+                    initial_points_by_surface=fixed_points,
+                )
                 if use_z_compensation:
                     apply_z_compensation(prim_z_map, reverse_prim_map)
-            else:
-                print(f" ⚠️ Pair {pair_idx}: no valid sampled pillows, B keeps initial state")
-
+                print(f" Pair {pair_idx}: B frame moved {len(moving_map)} prim(s): {list(moving_map.keys())}")
+            
+            # 步骤 3：刷新帧 - detach writer，运行几帧刷新时间累积缓存
             writer.detach()
             for _ in range(flush_frames_before_capture):
                 rep.orchestrator.step()
+            
+            # 步骤 4：渲染并捕获 - attach writer，捕获最终帧
             writer.attach(render_product)
             rep.orchestrator.step()
-            frame_counter[0] += 1
-            print(f" Pair {pair_idx} Frame B: captured moved state")
-
-            coords_b = get_world_coordinates(sampled_paths, sampled_prim_map)
-            coords_2d_b = get_2d_center_coordinates_from_projection(
-                sampled_paths, cam_path, resolution[0], resolution[1], sampled_prim_map
+            print(f" Frame {frame_idx}: rendered and captured (after {flush_frames_before_capture} flush frames)")
+            
+            # 验证捕获后物体的实际位置
+            print(f"[Verify] ===== 捕获后位置验证 =====")
+            for path in tracked_paths:
+                target_path = tracked_prim_map.get(path, path)
+                prim = stage.GetPrimAtPath(target_path)
+                if prim and prim.IsValid():
+                    xformable = UsdGeom.Xformable(prim)
+                    if xformable:
+                        # 获取 translate op 的值
+                        for op in xformable.GetOrderedXformOps():
+                            if op.GetOpType() == UsdGeom.XformOp.TypeTranslate:
+                                pos = op.Get()
+                                print(f"[Verify] {path}: translate = ({pos[0]:.4f}, {pos[1]:.4f}, {pos[2]:.4f})")
+                                break
+                        # 计算 bbox
+                        bbox_cache = UsdGeom.BBoxCache(0, [UsdGeom.Tokens.default_])
+                        world_bbox = bbox_cache.ComputeWorldBound(prim)
+                        if world_bbox and not world_bbox.GetRange().IsEmpty():
+                            bbox_min = world_bbox.GetRange().GetMin()
+                            print(f"[Verify]   bbox_min_z = {bbox_min[2]:.4f}")
+            
+            # 渲染完成后记录世界坐标
+            current_coords = get_world_coordinates(tracked_paths, tracked_prim_map)
+            frame_coordinates.append(current_coords)
+            
+            # 使用相机投影计算2D像素坐标
+            current_2d_coords = get_2d_center_coordinates_from_projection(
+                tracked_paths, cam_path, resolution[0], resolution[1], tracked_prim_map
             )
-            frame_coordinates.append(coords_b)
-            frame_2d_coordinates.append(coords_2d_b)
-            write_pair_outputs_immediately(pair_idx, coords_a, coords_b, coords_2d_a, coords_2d_b)
+            frame_2d_coordinates.append(current_2d_coords)
+            print(f" Frame {frame_idx}: recorded coords for {len(current_coords)} prims")
         
         print(f" Rendering complete. Recorded {len(frame_coordinates)} world coord frames, {len(frame_2d_coordinates)} 2D coord frames.")
-        print(f" All pair outputs have been written incrementally.")
+        
+        # 等待所有写入操作完成
+        rep.orchestrator.wait_until_complete()
+        print(f" All frames written to disk.")
+
+        # 17. 重新整理输出（包含 RGB、深度图、分割图）
+        import shutil
+        
+        rgb_frames = sorted(raw_dir.glob("rgb_*.png"))
+        depth_frames = sorted(raw_dir.glob("distance_to_camera_*.npy"))
+        if not depth_frames:
+            depth_frames = sorted(raw_dir.glob("distance_to_camera_*.png"))
+        instance_frames = sorted(raw_dir.glob("instance_segmentation_*.png"))
+        semantic_frames = sorted(raw_dir.glob("semantic_segmentation_*.png")) if semantic_segmentation else []
+        
+        print(f" Found {len(rgb_frames)} RGB frames")
+        print(f" Found {len(depth_frames)} depth frames")
+        print(f" Found {len(instance_frames)} instance segmentation frames")
+        print(f" Found {len(semantic_frames)} semantic segmentation frames")
+        print(f" Recorded {len(frame_coordinates)} world coordinate snapshots")
+        print(f" Recorded {len(frame_2d_coordinates)} 2D coordinate snapshots")
+        
+        # 验证有足够的帧来创建 pair 对
+        # 新逻辑：warmup 期间 writer detached，不产生文件，只有正式渲染帧
+        # 预期帧数 = pair_count * 2
+        min_frames_needed = pair_count * 2
+        actual_rgb = len(rgb_frames)
+        actual_coords = len(frame_coordinates)
+        
+        print(f" Expected: {min_frames_needed} frames (warmup not captured)")
+        print(f" Actual: {actual_rgb} RGB frames, {actual_coords} coord snapshots")
+        
+        if actual_rgb < min_frames_needed:
+            print(f" ⚠️ Warning: Need {min_frames_needed} frames but found {actual_rgb}")
+            # 尽可能创建能创建的 pair 数量
+            pair_count = min(pair_count, actual_rgb // 2)
+        
+        if actual_coords < min_frames_needed:
+            print(f" ⚠️ Warning: Need {min_frames_needed} coordinate snapshots but found {actual_coords}")
+        
+        print(f" Will create {pair_count} pairs")
+        
+        for idx in range(pair_count):
+            record = pair_records[idx]
+            pair_dir = cam_out_dir / record["pair_id"]
+            pair_dir.mkdir(parents=True, exist_ok=True)
+            
+            # 坐标索引和帧文件索引相同（warmup 不产生文件）
+            coord_a_idx = idx * 2
+            coord_b_idx = idx * 2 + 1
+            
+            # 帧文件索引：直接从 0 开始
+            frame_a_idx = idx * 2
+            frame_b_idx = idx * 2 + 1
+            
+            # 填充坐标信息（使用坐标索引）
+            actual_2d_coords = len(frame_2d_coordinates)
+            if coord_a_idx < actual_coords and coord_b_idx < actual_coords:
+                coords_a = frame_coordinates[coord_a_idx]
+                coords_b = frame_coordinates[coord_b_idx]
+                
+                # 获取2D坐标（如果可用）
+                coords_2d_a = frame_2d_coordinates[coord_a_idx] if coord_a_idx < actual_2d_coords else {}
+                coords_2d_b = frame_2d_coordinates[coord_b_idx] if coord_b_idx < actual_2d_coords else {}
+                
+                # 构建 coordinates 字典，包含世界坐标和2D中心像素坐标
+                selected_paths_for_pair = pair_records[idx].get("selected_prims", [])
+                for prim_path in selected_paths_for_pair:
+                    record["coordinates"][prim_path] = {
+                        "world_coordinate_A": coords_a.get(prim_path, None),
+                        "world_coordinate_B": coords_b.get(prim_path, None),
+                        "pixel_center_A": coords_2d_a.get(prim_path, None),
+                        "pixel_center_B": coords_2d_b.get(prim_path, None),
+                    }
+            else:
+                print(f" ⚠️ Coordinates not available for pair {idx}")
+            
+            # RGB（使用帧文件索引，跳过预热帧）
+            if frame_a_idx < len(rgb_frames) and frame_b_idx < len(rgb_frames):
+                shutil.copy2(rgb_frames[frame_a_idx], pair_dir / "A_rgb.png")
+                shutil.copy2(rgb_frames[frame_b_idx], pair_dir / "B_rgb.png")
+            
+            # 深度图
+            if frame_a_idx < len(depth_frames) and frame_b_idx < len(depth_frames):
+                depth_ext = depth_frames[frame_a_idx].suffix
+                shutil.copy2(depth_frames[frame_a_idx], pair_dir / f"A_depth{depth_ext}")
+                shutil.copy2(depth_frames[frame_b_idx], pair_dir / f"B_depth{depth_ext}")
+                
+                # 如果是 npy 格式，生成 png 可视化
+                if depth_ext == ".npy":
+                    depth_npy_to_png(depth_frames[frame_a_idx], pair_dir / "A_depth.png")
+                    depth_npy_to_png(depth_frames[frame_b_idx], pair_dir / "B_depth.png")
+            
+            # 实例分割图
+            if frame_a_idx < len(instance_frames) and frame_b_idx < len(instance_frames):
+                shutil.copy2(instance_frames[frame_a_idx], pair_dir / "A_instance_segmentation.png")
+                shutil.copy2(instance_frames[frame_b_idx], pair_dir / "B_instance_segmentation.png")
+            
+            # 语义分割图（默认关闭）
+            if semantic_segmentation and frame_a_idx < len(semantic_frames) and frame_b_idx < len(semantic_frames):
+                shutil.copy2(semantic_frames[frame_a_idx], pair_dir / "A_semantic_segmentation.png")
+                shutil.copy2(semantic_frames[frame_b_idx], pair_dir / "B_semantic_segmentation.png")
+            
+            # 保存 metadata
+            record_to_save = {k: v for k, v in record.items() if k != "selected_prims"}
+            meta_path = pair_dir / "metadata.json"
+            meta_path.write_text(json.dumps(record_to_save, indent=2))
+            
+            print(f" Created {record['pair_id']}: A=frame{frame_a_idx}, B=frame{frame_b_idx}")
         
         # 清理 raw 目录中的文件
         for leftover in raw_dir.glob("*.*"):
@@ -1396,21 +1586,27 @@ def depth_npy_to_png(npy_path, png_path):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Kitchen scene headless rendering")
+    parser = argparse.ArgumentParser(description="Diningroom scene headless rendering")
     parser.add_argument("--pair-count", type=int, default=10, help="Number of image pairs to generate")
     parser.add_argument("--warmup-k", type=int, default=3, help="Warmup multiplier (warmup_frames = 3 * k)")
-    parser.add_argument("--num-changes", type=int, default=1, help="Number of prims sampled from specific_prims")
+    parser.add_argument("--num-changes", type=int, default=1, help="Number of non-chair prims moved in each pair")
+    parser.add_argument(
+        "--origin",
+        action="store_true",
+        help="Keep A frame as current layout; only move sampled non-chair prims in B frame",
+    )
     parser.add_argument("--semantic-segmentation", action="store_true", help="Enable semantic segmentation output (default: disabled)")
     parser.add_argument("--width", type=int, default=1024, help="Image width")
     parser.add_argument("--height", type=int, default=768, help="Image height")
     parser.add_argument("--focal-length", type=float, default=None, help="Camera focal length (optional)")
-    parser.add_argument("--output-dir", type=str, default="/workspace/output/bedroom1_bed_move/3_items", help="Output directory")
+    parser.add_argument("--output-dir", type=str, default="/workspace/output/diningroom_move/3_items", help="Output directory")
     args = parser.parse_args()
 
-    run_kitchen_example(
+    run_diningroom_example(
         pair_count=args.pair_count,
         warmup_k=args.warmup_k,
         num_changes=args.num_changes,
+        origin=args.origin,
         semantic_segmentation=args.semantic_segmentation,
         resolution=(args.width, args.height),
         focal_length=args.focal_length,
