@@ -1,6 +1,6 @@
 # SceneTrans
 
-This project generates **paired images** for spatial change detection using **NVIDIA Isaac Sim**. It supports controlled scene changes such as `add`, `remove`, and `move`, and exports RGB images, depth maps, instance segmentation, semantic segmentation, and metadata.
+This is the official code repository for the SceneTrans project.
 
 ## Example
 

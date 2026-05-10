@@ -1,12 +1,12 @@
-# Headless 版本 - 基于 kitchen_test_editor.py 改编
-# 适合在容器/无 GUI 环境中运行
-# 使用 ./python.sh kitchen_test_headless.py 运行
-# 特性：随机化3个瓶子 prims，在两个柜台平面上放置
-# pair 差异通过不同的随机化位置和瓶子倒伏状态体现
+# Headless version - adapted from kitchen_test_editor.py
+# Suitable for running in containers / no-GUI environments
+# Use ./python.sh kitchen_test_headless.py to run
+# Features: randomize 3 bottle prims, placed on two counter planes
+# Pair difference is reflected by different randomized positions and bottle fallen states
 
 from isaacsim import SimulationApp
 
-# 1. 创建 SimulationApp（headless）
+# 1. Create SimulationApp (headless)
 simulation_app = SimulationApp(launch_config={"headless": True})
 
 import os
@@ -35,12 +35,12 @@ def run_kitchen_example(
     output_dir: str = "/workspace/output/bedroom1_bed_add/3_items",
 ):
     """
-    Headless 版本的卧室场景示例
-    - origin=False: B 帧会在平面内随机放置受控物体，A 帧隐藏抽中的物体
-    - origin=True: B 帧保持初始状态，A 帧仅隐藏抽中的物体
+    Headless version of the bedroom scene example
+    - origin=False: Frame B will randomly place controlled objects within the plane, Frame A hides the sampled objects
+    - origin=True: Frame B keeps the initial state, Frame A only hides the sampled objects
     """
-    
-    # 2. 打开厨房场景
+
+    # 2. Open the kitchen scene
     usd_path = "/workspace/assets/kujiale_0003/kujiale_0003.usda"
     print(f" Opening stage: {usd_path}")
     omni.usd.get_context().open_stage(usd_path)
@@ -51,10 +51,10 @@ def run_kitchen_example(
         print(" Error: Failed to open stage!")
         return
 
-    # 场景保持原样，不修改任何灯光设置
+    # Keep the scene as-is, do not modify any lighting settings
     print(" Scene loaded, preserving original lighting")
 
-    # 3.2 删除物理场景并关闭全局物理，避免随机化后被物理推走
+    # 3.2 Remove physics scene and disable global physics to avoid being pushed by physics after randomization
     for prim in stage.Traverse():
         if prim.GetTypeName() == "PhysicsScene":
             stage.RemovePrim(prim.GetPath())
@@ -64,17 +64,17 @@ def run_kitchen_example(
     carb.settings.get_settings().set("/physics/enabled", False)
     print(" Physics disabled via carb settings")
 
-    # 3. 配置渲染设置来消除时间累积造成的鬼影
-    # RTSubframes: 强制渲染器在每帧重新采样
+    # 3. Configure render settings to eliminate ghosting caused by temporal accumulation
+    # RTSubframes: force the renderer to resample every frame
     rep.settings.carb_settings("/omni/replicator/RTSubframes", 64)
     print(" RTSubframes set to 16 (to eliminate ghosting)")
 
 
 
-    # 4. 配合 on_frame 触发器，让 orchestrator 驱动写盘
+    # 4. Pair with on_frame trigger so orchestrator drives write to disk
     rep.orchestrator.set_capture_on_play(True)
 
-    # 4. 查找场景中已有的 Camera，使用 OmniverseKit_Persp
+    # 4. Find existing Camera in the scene, use OmniverseKit_Persp
     desired_camera = "/Root/bedroom1_bed"
     camera_list = []
     
@@ -83,7 +83,7 @@ def run_kitchen_example(
         camera_list = [desired_camera]
         print(f" Using camera: {desired_camera}")
     else:
-        # 尝试查找场景中其他相机作为备选
+        # Try to find other cameras in the scene as fallback
         print(f" Warning: Specified camera not found: {desired_camera}")
         for prim in stage.Traverse():
             if prim.GetTypeName() == "Camera":
@@ -98,7 +98,7 @@ def run_kitchen_example(
         camera_prim.CreateAttribute("focalLength", Sdf.ValueTypeNames.Float).Set(35.0)
         camera_list = ["/OmniverseKit_Persp"]
 
-    # 可选：调整相机焦距
+    # Optional: adjust camera focal length
     if focal_length is not None:
         for cam_path in camera_list:
             cam_prim = stage.GetPrimAtPath(cam_path)
@@ -107,13 +107,13 @@ def run_kitchen_example(
                 cam_schema.GetFocalLengthAttr().Set(float(focal_length))
                 print(f" Set focalLength={focal_length} for {cam_path}")
 
-    # 5. BasicWriter：输出到 /workspace/output/kitchen_headless
+    # 5. BasicWriter: output to /workspace/output/kitchen_headless
     writer = rep.writers.get("BasicWriter")
     out_dir = Path(output_dir)
 
-    # 6. 从指定 prim 列表中收集有效 prim，并在每个 pair 内进行随机采样
+    # 6. Collect valid prims from the specified prim list and randomly sample within each pair
     def find_valid_target_prims():
-        """返回用户指定列表中所有有效 prim，并按类别分组"""
+        """Return all valid prims from the user-specified list, grouped by category"""
         pillow_prims = [
             "/Root/Meshes/bedroom_767840/pillow_0006",
             "/Root/Meshes/bedroom_767840/pillow_0005",
@@ -122,7 +122,7 @@ def run_kitchen_example(
             "/Root/Meshes/bedroom_767840/pillow_0007",
         ]
 
-        # 预留给 lamp 的 prim 列表（后续可直接补充）
+        # Reserved prim list for lamp (can be supplemented directly later)
         lamp_prims = [
             "/Root/Meshes/bedroom_767840/table_lamp_0000",
             "/Root/Meshes/bedroom_767840/table_lamp_0001",
@@ -133,7 +133,7 @@ def run_kitchen_example(
             "lamp": lamp_prims,
         }
 
-        # 验证这些 prims 是否存在
+        # Verify whether these prims exist
         valid_prim_groups = {}
         for label, prim_list in prim_groups.items():
             valid_prims = []
@@ -149,7 +149,7 @@ def run_kitchen_example(
         return valid_prim_groups
 
     def sample_pair_prims(valid_prims):
-        """在每个 pair 开始时随机采样 num_changes 个 prim"""
+        """Randomly sample num_changes prims at the start of each pair"""
         if num_changes <= 0:
             print(f" Invalid num_changes={num_changes}, must be > 0")
             return []
@@ -166,9 +166,9 @@ def run_kitchen_example(
         selected_prims = random.sample(valid_prims, sample_k)
         return selected_prims
 
-    # 7. 检查并移除物体的碰撞体（randomize 的物体不需要 CollisionAPI）
+    # 7. Check and remove object collision bodies (randomized objects do not need CollisionAPI)
     def remove_collision_from_bottles(bottle_paths):
-        """检查并移除物体的 CollisionAPI，randomize 的物体不需要碰撞体"""
+        """Check and remove object CollisionAPI; randomized objects do not need collision bodies"""
         for path in bottle_paths:
             prim = stage.GetPrimAtPath(path)
             if not prim:
@@ -177,12 +177,12 @@ def run_kitchen_example(
             
             removed_count = 0
 
-            # 取消 instanceable
+            # Disable instanceable
             if prim.IsInstanceable():
                 prim.SetInstanceable(False)
                 print(f" Made prim non-instanceable: {path}")
-            
-            # 检查并移除 Xform 本身的 CollisionAPI
+
+            # Check and remove CollisionAPI from the Xform itself
             if prim.HasAPI(UsdPhysics.CollisionAPI):
                 prim.RemoveAPI(UsdPhysics.CollisionAPI)
                 print(f" ✓ Removed CollisionAPI from Xform: {path}")
@@ -192,7 +192,7 @@ def run_kitchen_example(
                 print(f" ✓ Removed RigidBodyAPI from Xform: {path}")
                 removed_count += 1
             
-            # 递归检查所有子节点的 CollisionAPI
+            # Recursively check CollisionAPI on all child nodes
             def remove_collision_from_children(parent_prim, depth=0):
                 nonlocal removed_count
                 if depth > 10:
@@ -200,8 +200,8 @@ def run_kitchen_example(
                 for child in parent_prim.GetChildren():
                     child_path = child.GetPath().pathString
                     child_type = child.GetTypeName()
-                    
-                    # 检查并移除 CollisionAPI
+
+                    # Check and remove CollisionAPI
                     if child.HasAPI(UsdPhysics.CollisionAPI):
                         child.RemoveAPI(UsdPhysics.CollisionAPI)
                         print(f" ✓ Removed CollisionAPI from {child_type}: {child_path}")
@@ -211,7 +211,7 @@ def run_kitchen_example(
                         print(f" ✓ Removed RigidBodyAPI from {child_type}: {child_path}")
                         removed_count += 1
                     
-                    # 继续递归检查子节点
+                    # Continue recursively checking child nodes
                     remove_collision_from_children(child, depth + 1)
             
             remove_collision_from_children(prim)
@@ -221,13 +221,13 @@ def run_kitchen_example(
             else:
                 print(f" No CollisionAPI found on: {path}")
 
-    # 8. 为 randomize 的物体添加语义标签（用于 instance/semantic segmentation）
+    # 8. Add semantic labels to randomized objects (for instance/semantic segmentation)
     def add_semantic_labels(prim_label_map):
         """
-        为指定的 prims 添加语义标签，按类别分别设置 pillow/lamp
-        同时使用两种方式确保兼容性：
-        1. 直接使用 USD primvars 写入语义属性（立即生效）
-        2. 使用 rep.modify.semantics（用于 Replicator graph）
+        Add semantic labels to the specified prims, set pillow/lamp by category
+        Use two approaches to ensure compatibility:
+        1. Directly write semantic properties using USD primvars (immediate effect)
+        2. Use rep.modify.semantics (for Replicator graph)
         """
         print(" Adding semantic labels using dual approach...")
         
@@ -239,7 +239,7 @@ def run_kitchen_example(
                     prim.RemoveProperty(attr.GetName())
 
         def set_semantic_primvar(prim, prim_name: str):
-            # 使用 UsdGeom primvar API，类型 token array，constant 插值
+            # Use UsdGeom primvar API, type token array, constant interpolation
             clear_old_semantics(prim)
             primvar = UsdGeom.PrimvarsAPI(prim).CreatePrimvar(
                 "semantics:class", Sdf.ValueTypeNames.TokenArray, UsdGeom.Tokens.constant
@@ -265,29 +265,29 @@ def run_kitchen_example(
                 continue
 
             try:
-                # 取消 instanceable，确保可以写 primvars
+                # Disable instanceable to ensure primvars can be written
                 if prim.IsInstanceable():
                     prim.SetInstanceable(False)
 
-                # 在 Xform 上写 primvars
+                # Write primvars on the Xform
                 set_semantic_primvar(prim, prim_name)
 
-                # 在子 Mesh 上写 primvars，保证分割能读取到
+                # Write primvars on child Meshes so segmentation can read them
                 mesh_children = collect_mesh_children(prim)
                 for mesh_prim in mesh_children:
                     if mesh_prim.IsInstanceable():
                         mesh_prim.SetInstanceable(False)
                     set_semantic_primvar(mesh_prim, prim_name)
 
-                # 使用 rep.modify.semantics 添加语义标签
+                # Use rep.modify.semantics to add semantic labels
                 prim_group = rep.get.prims(path_pattern=path)
                 with prim_group:
                     rep.modify.semantics([("class", prim_name)])
-                
+
                 added_count += 1
                 print(f" ✓ Semantic label added: {path} -> '{prim_name}' (meshes: {len(mesh_children)})")
 
-                # 打印验证（root + 第一个 mesh）
+                # Print verification (root + first mesh)
                 def log_semantic_attrs(target_prim, label):
                     attrs = [
                         (attr.GetName(), attr.Get())
@@ -309,7 +309,7 @@ def run_kitchen_example(
         
         return added_count
 
-    # 9. 查找并验证 prims
+    # 9. Find and verify prims
     valid_prim_groups = find_valid_target_prims()
     valid_candidate_paths = []
     path_label_map = {}
@@ -327,7 +327,7 @@ def run_kitchen_example(
         f"(pillow={len(valid_prim_groups.get('pillow', []))}, lamp={len(valid_prim_groups.get('lamp', []))})"
     )
 
-    # 9.1 解析可移动的 prim（通过 bbox 变化判断）
+    # 9.1 Resolve movable prims (determined by bbox change)
     def resolve_movable_prim(path, max_depth=6, delta=1.0):
         prim = stage.GetPrimAtPath(path)
         if not prim or not prim.IsValid():
@@ -382,7 +382,7 @@ def run_kitchen_example(
             translate_op.Set(Gf.Vec3d(old[0] + delta, old[1], old[2]))
             after_z = bbox_min_z(cand)
 
-            # 还原
+            # Restore
             translate_op.Set(old)
             if created:
                 try:
@@ -409,30 +409,30 @@ def run_kitchen_example(
         print(" No movable prims resolved; cannot proceed.")
         return
 
-    # 仅 pillow 参与平面随机放置；lamp 保持原位
+    # Only pillow participates in plane randomization; lamp keeps original position
     pillow_prim_path_map = {path: prim_path_map[path] for path in pillow_candidate_paths if path in prim_path_map}
     print(f" Pillow prims for plane randomization: {len(pillow_prim_path_map)}")
 
     reverse_prim_map = {movable: orig for orig, movable in prim_path_map.items()}
     movable_paths = list(prim_path_map.values())
-    
-    # 移除这些 prim 的物理碰撞体（如果有）
+
+    # Remove physics collision bodies from these prims (if any)
     remove_collision_from_bottles(valid_candidate_paths)
-    
-    # 应用语义标签到所有待随机化的物体
+
+    # Apply semantic labels to all objects to be randomized
     added = add_semantic_labels(path_label_map)
     print(f" Semantic labels added: {added} prims labeled")
 
-    # 10. 使用指定的平面进行随机放置
+    # 10. Use specified planes for random placement
     cabinet_prims = [
         "Root/bedroom1_bed_plane1",
     ]
 
     def normalize_prim_path(path: str) -> str:
-        """确保路径以 / 开头，兼容输入不带前导斜杠的情况"""
+        """Ensure the path starts with /, for compatibility with inputs lacking a leading slash"""
         return path if path.startswith("/") else f"/{path}"
-    
-    # 验证柜台 prims 是否存在
+
+    # Verify whether cabinet prims exist
     valid_cabinet_prims = []
     for cabinet_prim in cabinet_prims:
         cabinet_prim = normalize_prim_path(cabinet_prim)
@@ -447,20 +447,20 @@ def run_kitchen_example(
         print(f" ❌ Error: No valid cabinet prims found!")
         return
     
-    # 10.1 获取表面 Z 高度（用于 Z 补偿）
+    # 10.1 Get surface Z height (for Z compensation)
     def get_surface_z_height(surface_prim_paths):
         """
-        获取表面的最高 Z 坐标，作为物体放置的参考高度
+        Get the highest Z coordinate of the surface, as the reference height for object placement
         """
-        print(f"\n[Surface-Z] ========== 计算表面 Z 高度 ==========")
+        print(f"\n[Surface-Z] ========== Computing surface Z height ==========")
         max_z = float('-inf')
         for path in surface_prim_paths:
             prim = stage.GetPrimAtPath(path)
             if not prim or not prim.IsValid():
-                print(f"[Surface-Z] ❌ Prim 无效: {path}")
+                print(f"[Surface-Z] ❌ Prim invalid: {path}")
                 continue
-            
-            print(f"[Surface-Z] 检查: {path}, 类型: {prim.GetTypeName()}")
+
+            print(f"[Surface-Z] Checking: {path}, type: {prim.GetTypeName()}")
             
             bbox_cache = UsdGeom.BBoxCache(0, [UsdGeom.Tokens.default_])
             world_bbox = bbox_cache.ComputeWorldBound(prim)
@@ -473,46 +473,46 @@ def run_kitchen_example(
                 if bbox_max_z > max_z:
                     max_z = bbox_max_z
             else:
-                print(f"[Surface-Z]   ⚠️ 无法计算 bbox 或 bbox 为空")
-                
-                # 尝试获取 transform 作为备选
+                print(f"[Surface-Z]   ⚠️ Unable to compute bbox or bbox is empty")
+
+                # Try to get transform as fallback
                 xformable = UsdGeom.Xformable(prim)
                 if xformable:
                     world_transform = xformable.ComputeLocalToWorldTransform(0)
                     translation = world_transform.ExtractTranslation()
-                    print(f"[Surface-Z]   Transform 位置: ({translation[0]:.4f}, {translation[1]:.4f}, {translation[2]:.4f})")
-                    # 使用 transform 的 Z 作为备选
+                    print(f"[Surface-Z]   Transform position: ({translation[0]:.4f}, {translation[1]:.4f}, {translation[2]:.4f})")
+                    # Use transform's Z as fallback
                     if translation[2] > max_z:
                         max_z = translation[2]
-                        print(f"[Surface-Z]   使用 transform Z 作为表面高度: {translation[2]:.4f}")
-        
+                        print(f"[Surface-Z]   Using transform Z as surface height: {translation[2]:.4f}")
+
         result = max_z if max_z != float('-inf') else 0.0
-        print(f"[Surface-Z] 最终表面 Z 高度: {result}")
+        print(f"[Surface-Z] Final surface Z height: {result}")
         print(f"[Surface-Z] ==========================================\n")
         return result
-    
-    # 获取表面高度（从 bounds_list 的 surface_z 取最大值）
-    # 注意：get_surface_z_height 可能返回 0，所以我们在 bounds_list 计算后再更新
+
+    # Get surface height (take the maximum from surface_z in bounds_list)
+    # Note: get_surface_z_height may return 0, so we update after bounds_list computation
     surface_z_height = get_surface_z_height(valid_cabinet_prims)
-    
-    # 10.2 Z 补偿函数：在随机化 + 旋转后调用，防止物体陷入平面
+
+    # 10.2 Z compensation function: called after randomization + rotation, to prevent objects from sinking into the plane
     def apply_z_compensation(prim_surface_z_map, prim_display_map=None):
         """
-        根据物体当前姿态的 bounding box，补偿 Z 高度使底部贴合表面
-        
-        核心逻辑：
-        1. 获取物体当前的 translate op 中的 Z 值
-        2. 计算 bbox 底部与目标表面 Z 的差距
-        3. 调整 Z，使 bbox 底部 = 该物体所在平面的 surface_z
-        
+        Based on the object's current pose bounding box, compensate Z height so the bottom sits on the surface
+
+        Core logic:
+        1. Get the current Z value in the object's translate op
+        2. Compute the gap between the bbox bottom and the target surface Z
+        3. Adjust Z so that bbox bottom = surface_z of the plane the object is on
+
         Args:
-            prim_surface_z_map: {prim_path: surface_z} 每个物体被放到的平面 Z 高度
+            prim_surface_z_map: {prim_path: surface_z} the plane Z height each object was placed on
         """
         if not prim_surface_z_map:
-            print(f"\n[Z-comp] ⚠️ 没有需要补偿的物体")
+            print(f"\n[Z-comp] ⚠️ No objects requiring compensation")
             return
-        
-        print(f"\n[Z-comp] ========== 开始 Z 补偿 ==========")
+
+        print(f"\n[Z-comp] ========== Starting Z compensation ==========")
         
         bbox_cache = UsdGeom.BBoxCache(0, [UsdGeom.Tokens.default_])
         
@@ -520,15 +520,15 @@ def run_kitchen_example(
             display_name = prim_display_map.get(path, path) if prim_display_map else path
             prim = stage.GetPrimAtPath(path)
             if not prim or not prim.IsValid():
-                print(f"[Z-comp] ❌ Prim 无效: {display_name}")
+                print(f"[Z-comp] ❌ Prim invalid: {display_name}")
                 continue
-            
+
             xformable = UsdGeom.Xformable(prim)
             if not xformable:
-                print(f"[Z-comp] ❌ 无法获取 Xformable: {display_name}")
+                print(f"[Z-comp] ❌ Unable to get Xformable: {display_name}")
                 continue
-            
-            # 获取当前 translate op
+
+            # Get current translate op
             ops = xformable.GetOrderedXformOps()
             translate_op = None
             for op in ops:
@@ -537,53 +537,53 @@ def run_kitchen_example(
                     break
             
             if not translate_op:
-                print(f"[Z-comp] ⚠️ {display_name}: 没有 translate op，跳过")
+                print(f"[Z-comp] ⚠️ {display_name}: no translate op, skipping")
                 continue
-            
+
             current_pos = translate_op.Get()
             if not current_pos:
-                print(f"[Z-comp] ⚠️ {display_name}: translate op 无值")
+                print(f"[Z-comp] ⚠️ {display_name}: translate op has no value")
                 continue
-            
+
             current_z = current_pos[2]
-            
-            # 计算当前姿态下的 world bounding box
+
+            # Compute world bounding box under current pose
             bbox_cache.Clear()
             world_bbox = bbox_cache.ComputeWorldBound(prim)
             if not world_bbox or world_bbox.GetRange().IsEmpty():
-                print(f"[Z-comp] ⚠️ 无法计算 bbox: {display_name}")
+                print(f"[Z-comp] ⚠️ Unable to compute bbox: {display_name}")
                 continue
-            
+
             bbox_min_z = world_bbox.GetRange().GetMin()[2]
-            
-            # 计算需要的 Z 调整：让 bbox 底部对齐到该物体所在平面的 surface_z
+
+            # Compute the required Z adjustment: align bbox bottom to surface_z of the plane the object is on
             z_adjustment = target_surface_z - bbox_min_z
             new_z = current_z + z_adjustment
-            
+
             print(f"[Z-comp] {display_name}: target_z={target_surface_z:.4f}, current_z={current_z:.4f}, bbox_min_z={bbox_min_z:.4f}")
             print(f"[Z-comp]   adjustment={z_adjustment:.4f}, new_z={new_z:.4f}")
-            
-            # 设置新位置
+
+            # Set new position
             new_pos = Gf.Vec3d(current_pos[0], current_pos[1], new_z)
             translate_op.Set(new_pos)
-            
-            # 验证
+
+            # Verify
             bbox_cache.Clear()
             new_bbox = bbox_cache.ComputeWorldBound(prim)
             if new_bbox:
                 new_min_z = new_bbox.GetRange().GetMin()[2]
-                print(f"[Z-comp] ✓ 验证: 新 bbox_min_z = {new_min_z:.4f} (期望 {target_surface_z:.4f})")
-        
-        print(f"[Z-comp] ========== Z 补偿完成 ==========\n")
+                print(f"[Z-comp] ✓ Verify: new bbox_min_z = {new_min_z:.4f} (expected {target_surface_z:.4f})")
 
-    # 是否启用 Z 补偿（如仅强制设置 Z，可关闭）
+        print(f"[Z-comp] ========== Z compensation done ==========\n")
+
+    # Whether to enable Z compensation (can be disabled if only forcing Z)
     use_z_compensation = True
 
-    # 11. 查找实际的 Mesh prim（scatter_2d 需要直接的 Mesh，不能是容器）
+    # 11. Find the actual Mesh prim (scatter_2d requires a direct Mesh, not a container)
     def find_actual_mesh(prim_path, depth=0, max_depth=3):
         """
-        递归查找 prim 下实际的 Mesh 子节点
-        因为 scatter_2d 需要直接的 Mesh prim，不能是包含 Mesh 的容器
+        Recursively find the actual Mesh child node under prim
+        Because scatter_2d requires a direct Mesh prim, not a container with Mesh
         """
         if depth > max_depth:
             return None
@@ -604,7 +604,7 @@ def run_kitchen_example(
                     return result
         return None
     
-    # 查找所有柜台的实际 mesh prims
+    # Find actual mesh prims for all cabinets
     actual_cabinet_meshes = []
     for cabinet_prim in valid_cabinet_prims:
         actual_mesh = find_actual_mesh(cabinet_prim)
@@ -612,15 +612,15 @@ def run_kitchen_example(
             actual_cabinet_meshes.append(actual_mesh)
             print(f" Using mesh for scatter_2d: {actual_mesh}")
         else:
-            # 如果找不到子 Mesh，尝试直接使用该 prim
+            # If no child Mesh is found, try using the prim directly
             print(f" Will try using prim directly: {cabinet_prim}")
             actual_cabinet_meshes.append(cabinet_prim)
-    
+
     if not actual_cabinet_meshes:
         print(" ❌ Error: No valid meshes found for scatter_2d")
         return
-    
-    # 获取柜台 prims 作为 scatter_2d 的表面
+
+    # Get cabinet prims as scatter_2d surface
     surface_nodes = []
     for mesh_path in actual_cabinet_meshes:
         prim_node = rep.get.prims(path_pattern=mesh_path)
@@ -632,26 +632,26 @@ def run_kitchen_example(
         print(" ❌ Error: No valid surface found for scatter_2d")
         return
     
-    # 如果有多个表面，创建一个组；否则直接使用单个表面
+    # If there are multiple surfaces, create a group; otherwise use the single surface directly
     if len(surface_nodes) == 1:
         surface = surface_nodes[0]
     else:
         surface = rep.create.group(surface_nodes)
         print(f" Created surface group with {len(surface_nodes)} meshes")
     
-    # 11.5 计算每个表面的世界坐标范围（用于 USD API 随机化）
+    # 11.5 Compute world coordinate range for each surface (used for USD API randomization)
     def get_each_surface_bounds(surface_prim_paths):
         """
-        获取每个表面的世界坐标范围（分开存储，不合并）
-        使用世界变换矩阵 + Mesh 的 extent 属性来精确计算范围
-        返回: [(min_x, max_x, min_y, max_y, surface_z), ...]
+        Get the world coordinate range for each surface (stored separately, not merged)
+        Use the world transform matrix + Mesh extent attribute to compute the range precisely
+        Returns: [(min_x, max_x, min_y, max_y, surface_z), ...]
         """
         surface_bounds_list = []
-        
-        print(f"\n[Surface-Bounds] ========== 计算每个表面范围 ==========")
-        
+
+        print(f"\n[Surface-Bounds] ========== Computing each surface range ==========")
+
         def find_mesh_in_prim(parent_prim, depth=0, max_depth=5):
-            """递归查找 prim 下的 Mesh 子节点"""
+            """Recursively find Mesh child nodes under prim"""
             if depth > max_depth:
                 return None
             if parent_prim.GetTypeName() == "Mesh":
@@ -667,46 +667,46 @@ def run_kitchen_example(
         for path in surface_prim_paths:
             prim = stage.GetPrimAtPath(path)
             if not prim or not prim.IsValid():
-                print(f"[Surface-Bounds] ❌ Prim 无效: {path}")
+                print(f"[Surface-Bounds] ❌ Prim invalid: {path}")
                 continue
-            
-            print(f"[Surface-Bounds] 检查: {path}, 类型: {prim.GetTypeName()}")
-            
-            # 首先打印 prim 的世界位置（用于诊断）
+
+            print(f"[Surface-Bounds] Checking: {path}, type: {prim.GetTypeName()}")
+
+            # First print the prim's world position (for diagnostics)
             xformable = UsdGeom.Xformable(prim)
             if xformable:
                 world_transform = xformable.ComputeLocalToWorldTransform(0)
                 translation = world_transform.ExtractTranslation()
-                print(f"[Surface-Bounds]   世界位置: ({translation[0]:.4f}, {translation[1]:.4f}, {translation[2]:.4f})")
-            
-            # 查找实际的 Mesh prim
+                print(f"[Surface-Bounds]   World position: ({translation[0]:.4f}, {translation[1]:.4f}, {translation[2]:.4f})")
+
+            # Find the actual Mesh prim
             mesh_prim = find_mesh_in_prim(prim)
             target_prim = mesh_prim if mesh_prim else prim
             target_path = target_prim.GetPath().pathString
-            print(f"[Surface-Bounds]   使用 prim: {target_path}, 类型: {target_prim.GetTypeName()}")
-            
-            # 方法1：尝试获取 Mesh 的 extent 属性
+            print(f"[Surface-Bounds]   Using prim: {target_path}, type: {target_prim.GetTypeName()}")
+
+            # Method 1: try to get the Mesh extent attribute
             extent_attr = target_prim.GetAttribute("extent")
             local_extent = None
             if extent_attr and extent_attr.HasValue():
                 local_extent = extent_attr.Get()
                 if local_extent and len(local_extent) >= 2:
-                    print(f"[Surface-Bounds]   本地 extent: min={local_extent[0]}, max={local_extent[1]}")
-            
-            # 获取世界变换矩阵
+                    print(f"[Surface-Bounds]   Local extent: min={local_extent[0]}, max={local_extent[1]}")
+
+            # Get world transform matrix
             target_xformable = UsdGeom.Xformable(target_prim)
             if not target_xformable:
-                print(f"[Surface-Bounds] ❌ 无法获取 Xformable: {target_path}")
+                print(f"[Surface-Bounds] ❌ Unable to get Xformable: {target_path}")
                 continue
-            
+
             world_transform = target_xformable.ComputeLocalToWorldTransform(0)
-            
-            # 如果有 extent，用它的四个角来计算世界范围
+
+            # If extent exists, use its four corners to compute the world range
             if local_extent and len(local_extent) >= 2:
                 local_min = local_extent[0]
                 local_max = local_extent[1]
-                
-                # 构建本地空间的8个角点（用于3D盒子）或4个角点（用于平面）
+
+                # Build 8 corner points of local space (for 3D box) or 4 corner points (for plane)
                 local_corners = [
                     Gf.Vec3d(local_min[0], local_min[1], local_min[2]),
                     Gf.Vec3d(local_max[0], local_min[1], local_min[2]),
@@ -718,16 +718,16 @@ def run_kitchen_example(
                     Gf.Vec3d(local_max[0], local_max[1], local_max[2]),
                 ]
             else:
-                # 备选：假设单位平面
-                print(f"[Surface-Bounds]   ⚠️ 无 extent，使用单位平面假设")
+                # Fallback: assume unit plane
+                print(f"[Surface-Bounds]   ⚠️ No extent, using unit plane assumption")
                 local_corners = [
                     Gf.Vec3d(-0.5, -0.5, 0),
                     Gf.Vec3d(0.5, -0.5, 0),
                     Gf.Vec3d(-0.5, 0.5, 0),
                     Gf.Vec3d(0.5, 0.5, 0),
                 ]
-            
-            # 变换到世界坐标并计算范围
+
+            # Transform to world coordinates and compute range
             min_x, max_x = float('inf'), float('-inf')
             min_y, max_y = float('inf'), float('-inf')
             max_z = float('-inf')
@@ -741,10 +741,10 @@ def run_kitchen_example(
                 max_z = max(max_z, world_corner[2])
             
             surface_z = max_z
-            
-            print(f"[Surface-Bounds]   计算后范围: X=[{min_x:.2f}, {max_x:.2f}], Y=[{min_y:.2f}, {max_y:.2f}], Z={surface_z:.2f}")
-            
-            # 添加 5% 边距余量
+
+            print(f"[Surface-Bounds]   Computed range: X=[{min_x:.2f}, {max_x:.2f}], Y=[{min_y:.2f}, {max_y:.2f}], Z={surface_z:.2f}")
+
+            # Add 5% margin
             range_x = max_x - min_x
             range_y = max_y - min_y
             margin_x = range_x * 0.05
@@ -753,82 +753,82 @@ def run_kitchen_example(
             max_x -= margin_x
             min_y += margin_y
             max_y -= margin_y
-            
-            # 使用带边距的范围
+
+            # Use the range with margin
             bounds = (min_x, max_x, min_y, max_y, surface_z)
             surface_bounds_list.append(bounds)
-            
-            print(f"[Surface-Bounds]   最终范围: X=[{bounds[0]:.2f}, {bounds[1]:.2f}], Y=[{bounds[2]:.2f}, {bounds[3]:.2f}], Z={surface_z:.2f}")
-        
-        print(f"[Surface-Bounds] 共 {len(surface_bounds_list)} 个有效表面")
+
+            print(f"[Surface-Bounds]   Final range: X=[{bounds[0]:.2f}, {bounds[1]:.2f}], Y=[{bounds[2]:.2f}, {bounds[3]:.2f}], Z={surface_z:.2f}")
+
+        print(f"[Surface-Bounds] Total {len(surface_bounds_list)} valid surfaces")
         print(f"[Surface-Bounds] ==========================================\n")
-        
+
         return surface_bounds_list
-    
-    # 获取每个表面的范围（列表）
+
+    # Get the range for each surface (list)
     surface_bounds_list = get_each_surface_bounds(valid_cabinet_prims)
-    
-    # 从 bounds_list 获取正确的 surface_z_height（取最大值）
-    # 这比 get_surface_z_height 更可靠
+
+    # Get correct surface_z_height from bounds_list (take maximum)
+    # This is more reliable than get_surface_z_height
     if surface_bounds_list:
         surface_z_height = max(bounds[4] for bounds in surface_bounds_list)
-        print(f" ✓ surface_z_height 从 bounds_list 更新为: {surface_z_height:.4f}")
-    
-    # 11.6 纯 USD API 随机化函数（完全控制，不依赖 Replicator trigger）
+        print(f" ✓ surface_z_height updated from bounds_list to: {surface_z_height:.4f}")
+
+    # 11.6 Pure USD API randomization function (full control, does not depend on Replicator trigger)
     import random as py_random
-    
+
     def manual_randomize_objects(prim_path_map, bounds_list):
         """
-        使用纯 USD API 随机化物体位置和旋转
-        每个物体随机选择一个平面，然后在该平面范围内放置
-        
+        Use pure USD API to randomize object position and rotation
+        Each object randomly selects a plane, then is placed within that plane's range
+
         Args:
             prim_path_map: {original_path: movable_path}
-            bounds_list: 表面范围列表 [(min_x, max_x, min_y, max_y, surface_z), ...]
-        
+            bounds_list: list of surface ranges [(min_x, max_x, min_y, max_y, surface_z), ...]
+
         Returns:
-            dict: {prim_path: surface_z} 每个物体被放到的平面 Z 高度
+            dict: {prim_path: surface_z} the plane Z height each object was placed on
         """
         prim_surface_z_map = {}
-        
+
         if not bounds_list:
-            print(f"[Manual-Rand] ❌ 没有有效的表面范围")
+            print(f"[Manual-Rand] ❌ No valid surface ranges")
             return prim_surface_z_map
-        
-        print(f"\n[Manual-Rand] ========== 开始 USD API 随机化 ==========")
-        print(f"[Manual-Rand] 可用表面数量: {len(bounds_list)}")
-        
+
+        print(f"\n[Manual-Rand] ========== Starting USD API randomization ==========")
+        print(f"[Manual-Rand] Available surface count: {len(bounds_list)}")
+
         for orig_path, move_path in prim_path_map.items():
             prim = stage.GetPrimAtPath(move_path)
             if not prim or not prim.IsValid():
-                print(f"[Manual-Rand] ❌ Prim 无效: {move_path} (orig {orig_path})")
+                print(f"[Manual-Rand] ❌ Prim invalid: {move_path} (orig {orig_path})")
                 continue
-            
+
             xformable = UsdGeom.Xformable(prim)
             if not xformable:
-                print(f"[Manual-Rand] ❌ 无法获取 Xformable: {path}")
+                print(f"[Manual-Rand] ❌ Unable to get Xformable: {path}")
                 continue
-            
-            # 随机选择一个平面
+
+            # Randomly select a plane
             selected_bounds = py_random.choice(bounds_list)
             min_x, max_x, min_y, max_y, surface_z = selected_bounds
             surface_idx = bounds_list.index(selected_bounds)
-            
-            # 记录这个物体被放到的表面 Z 高度
+
+            # Record the surface Z height this object was placed on
             prim_surface_z_map[move_path] = surface_z
-            
-            # 随机生成位置（在选中的平面范围内）
+
+            # Randomly generate position (within the selected plane range)
             rand_x = py_random.uniform(min_x, max_x)
             rand_y = py_random.uniform(min_y, max_y)
-            # 直接强制 Z，不依赖 bbox 补偿
+            # Directly force Z, do not rely on bbox compensation
             rand_z = surface_z
-            
-            # 随机旋转：X 轴 0 或 90 度（站立或倒下），Z 轴 0-360 度
+
+            # Random rotation: X axis 0 or 90 degrees (standing or fallen), Z axis 0-360 degrees
             rand_rot_x = py_random.choice([0, 0])
             rand_rot_y = 0
             rand_rot_z = py_random.uniform(0, 360)
-            
-            # 获取或创建 xform ops
+
+            # Get or create xform ops
             ops = xformable.GetOrderedXformOps()
             translate_op = None
             rotate_op = None
@@ -839,36 +839,36 @@ def run_kitchen_example(
                 elif op.GetOpType() == UsdGeom.XformOp.TypeRotateXYZ:
                     rotate_op = op
             
-            # 设置位置
+            # Set position
             if translate_op:
                 translate_op.Set(Gf.Vec3d(rand_x, rand_y, rand_z))
             else:
                 translate_op = xformable.AddTranslateOp(UsdGeom.XformOp.PrecisionDouble)
                 translate_op.Set(Gf.Vec3d(rand_x, rand_y, rand_z))
-            
-            # 设置旋转
+
+            # Set rotation
             if rotate_op:
                 rotate_op.Set(Gf.Vec3f(rand_rot_x, rand_rot_y, rand_rot_z))
             else:
                 rotate_op = xformable.AddRotateXYZOp(UsdGeom.XformOp.PrecisionFloat)
                 rotate_op.Set(Gf.Vec3f(rand_rot_x, rand_rot_y, rand_rot_z))
-            
-            state = "站立" if rand_rot_x == 0 else "倒下"
-            
-            # 验证位置是否在范围内
+
+            state = "standing" if rand_rot_x == 0 else "fallen"
+
+            # Verify position is within range
             in_range_x = min_x <= rand_x <= max_x
             in_range_y = min_y <= rand_y <= max_y
             if not in_range_x or not in_range_y:
-                print(f"[Manual-Rand] ❌ {path}: 位置超出范围!")
+                print(f"[Manual-Rand] ❌ {path}: position out of range!")
                 print(f"[Manual-Rand]   bounds: X=[{min_x:.2f}, {max_x:.2f}], Y=[{min_y:.2f}, {max_y:.2f}]")
                 print(f"[Manual-Rand]   pos: X={rand_x:.2f} {'✓' if in_range_x else '❌'}, Y={rand_y:.2f} {'✓' if in_range_y else '❌'}")
-            
-            print(f"[Manual-Rand] ✓ {orig_path}: 平面{surface_idx}(Z={surface_z:.2f}), bounds=X[{min_x:.2f},{max_x:.2f}],Y[{min_y:.2f},{max_y:.2f}], pos=({rand_x:.2f}, {rand_y:.2f}, {rand_z:.2f}), rot=({rand_rot_x}, {rand_rot_y}, {rand_rot_z:.0f}) [{state}]")
-        
-        print(f"[Manual-Rand] ========== 随机化完成 ==========\n")
+
+            print(f"[Manual-Rand] ✓ {orig_path}: plane{surface_idx}(Z={surface_z:.2f}), bounds=X[{min_x:.2f},{max_x:.2f}],Y[{min_y:.2f},{max_y:.2f}], pos=({rand_x:.2f}, {rand_y:.2f}, {rand_z:.2f}), rot=({rand_rot_x}, {rand_rot_y}, {rand_rot_z:.0f}) [{state}]")
+
+        print(f"[Manual-Rand] ========== Randomization done ==========\n")
         return prim_surface_z_map
 
-    # 12. 为每个相机渲染
+    # 12. Render for each camera
     for cam_path in camera_list:
         print(f"\n ========== Rendering camera: {cam_path} ==========")
 
@@ -878,8 +878,8 @@ def run_kitchen_example(
         raw_dir = cam_out_dir / "_raw_frames"
         os.makedirs(raw_dir, exist_ok=True)
         
-        # 先运行暖机帧来刷新时间缓存（移除原始位置的残影）
-        # warmup 帧数 = 3 * warmup_k，确保是 3 的倍数
+        # First run warmup frames to flush temporal cache (remove ghosting from original position)
+        # warmup frame count = 3 * warmup_k, ensure it is a multiple of 3
         warmup_frames = 3 * warmup_k
         if origin:
             print(f" Running {warmup_frames} warmup frames (k={warmup_k}) in origin mode (no reposition).")
@@ -887,12 +887,12 @@ def run_kitchen_example(
             print(f" Running {warmup_frames} warmup frames (k={warmup_k}) with randomization...")
         rep.orchestrator.set_capture_on_play(False)
         
-        # 在 warmup 期间，直接用 USD API 移动瓶子到随机位置
-        # 这样可以刷掉原始位置的时间缓存
-        # 每 3 帧移动一次，共移动 warmup_k 次
+        # During warmup, directly use USD API to move bottles to random positions
+        # This flushes the temporal cache for the original position
+        # Move every 3 frames, total of warmup_k times
         import random as py_random
         for warmup_i in range(warmup_frames):
-            # 每隔 3 帧移动一次瓶子，刷新缓存
+            # Move bottles every 3 frames to refresh the cache
             if (not origin) and warmup_i % 3 == 0:
                 for path in pillow_candidate_paths:
                     target_path = prim_path_map.get(path, path)
@@ -900,10 +900,10 @@ def run_kitchen_example(
                     if prim:
                         xformable = UsdGeom.Xformable(prim)
                         if xformable:
-                            # 获取现有的 translate op
+                            # Get existing translate op
                             for op in xformable.GetOrderedXformOps():
                                 if op.GetOpType() == UsdGeom.XformOp.TypeTranslate:
-                                    # 微调位置来刷新缓存
+                                    # Slightly adjust position to refresh cache
                                     current = op.Get()
                                     if current:
                                         new_pos = (
@@ -920,7 +920,7 @@ def run_kitchen_example(
         else:
             print(f" Warmup done, original positions flushed from cache.")
 
-        # 诊断：直接从 annotator 拉取一帧分割数据，确认非零
+        # Diagnostic: directly pull one frame of segmentation data from annotator to confirm non-zero
         def log_annotator_sample(render_prod):
             import numpy as np
 
@@ -929,13 +929,13 @@ def run_kitchen_example(
             semantic_anno.attach(render_prod)
             instance_anno.attach(render_prod)
 
-            # capture 关闭状态下手动 step 一帧
+            # Manually step one frame while capture is disabled
             rep.orchestrator.step()
 
             sem = semantic_anno.get_data()
             ins = instance_anno.get_data()
             def summarize(arr, name):
-                # 兼容不同返回格式（dict 或 ndarray）
+                # Compatible with different return formats (dict or ndarray)
                 if isinstance(arr, dict) and "data" in arr:
                     arr = arr["data"]
                 if isinstance(arr, dict) and "semantic" in arr:
@@ -952,30 +952,30 @@ def run_kitchen_example(
             semantic_anno.detach()
             instance_anno.detach()
 
-        # log_annotator_sample(render_product)  # 临时禁用诊断，避免额外的 step()
-        
-        # 清理目录中的旧文件
+        # log_annotator_sample(render_product)  # Temporarily disable diagnostics to avoid extra step()
+
+        # Clean up old files in directory
         for old_file in raw_dir.glob("*.*"):
             old_file.unlink(missing_ok=True)
-        
-        # 现在初始化并 attach writer（warmup 之后）
+
+        # Now initialize and attach writer (after warmup)
         writer.initialize(
             output_dir=str(raw_dir),
             rgb=True,
-            distance_to_camera=True,           # 深度图 (depth map)
-            semantic_segmentation=semantic_segmentation,        # 语义分割图（开关控制）
-            colorize_semantic_segmentation=semantic_segmentation,  # 彩色语义分割（开关控制）
-            instance_segmentation=True,        # 实例分割图
-            colorize_instance_segmentation=True,  # 彩色实例分割
+            distance_to_camera=True,           # depth map
+            semantic_segmentation=semantic_segmentation,        # semantic segmentation map (toggle controlled)
+            colorize_semantic_segmentation=semantic_segmentation,  # colored semantic segmentation (toggle controlled)
+            instance_segmentation=True,        # instance segmentation map
+            colorize_instance_segmentation=True,  # colored instance segmentation
             bounding_box_2d_tight=False
         )
         writer.attach(render_product)
-        
-        # 开启捕获
+
+        # Enable capture
         rep.orchestrator.set_capture_on_play(True)
         print(f" Writer attached, starting capture...")
 
-        # 创建 pair 计划
+        # Create pair plan
         total_frames = pair_count * 2
         pair_records = []
         
@@ -987,14 +987,14 @@ def run_kitchen_example(
                 "camera": cam_path,
                 "num_changes": 0,
                 "selected_prims": [],
-                "coordinates": {},  # 将在渲染时填充
+                "coordinates": {},  # to be filled during rendering
             })
 
         print(f" Generating {pair_count} pairs ({total_frames} frames)")
 
-        # 定义获取世界坐标的函数
+        # Define function to get world coordinates
         def get_world_coordinates(prim_paths, prim_map=None):
-            """获取指定 prims 的世界坐标"""
+            """Get world coordinates of specified prims"""
             coords = {}
             for path in prim_paths:
                 target_path = prim_map.get(path, path) if prim_map else path
@@ -1002,29 +1002,29 @@ def run_kitchen_example(
                 if prim and prim.IsValid():
                     xformable = UsdGeom.Xformable(prim)
                     if xformable:
-                        # 获取世界变换矩阵
+                        # Get world transform matrix
                         world_transform = xformable.ComputeLocalToWorldTransform(0)
-                        # 提取平移部分（世界坐标）
+                        # Extract translation part (world coordinates)
                         translation = world_transform.ExtractTranslation()
                         coords[path] = [translation[0], translation[1], translation[2]]
             return coords
 
         def get_2d_center_coordinates_from_projection(prim_paths, camera_path, image_width, image_height, prim_map=None):
             """
-            使用相机投影矩阵将3D世界坐标投影到2D像素坐标（不依赖语义分割）
-            
+            Use camera projection matrix to project 3D world coordinates to 2D pixel coordinates (does not depend on semantic segmentation)
+
             Args:
-                prim_paths: prim 路径列表
-                camera_path: 相机路径
-                image_width: 图像宽度
-                image_height: 图像高度
-            
+                prim_paths: list of prim paths
+                camera_path: camera path
+                image_width: image width
+                image_height: image height
+
             Returns:
-                dict: {prim_path: [pixel_x, pixel_y]} 或 {prim_path: None} 如果投影失败
+                dict: {prim_path: [pixel_x, pixel_y]} or {prim_path: None} if projection fails
             """
             coords_2d = {}
-            
-            # 获取相机 prim
+
+            # Get camera prim
             camera_prim = stage.GetPrimAtPath(camera_path)
             if not camera_prim or not camera_prim.IsValid():
                 print(f" Warning: Camera not found: {camera_path}")
@@ -1039,24 +1039,24 @@ def run_kitchen_example(
                     coords_2d[path] = None
                 return coords_2d
             
-            # 获取相机的世界变换矩阵（相机到世界）
+            # Get camera's world transform matrix (camera to world)
             camera_xformable = UsdGeom.Xformable(camera_prim)
             camera_world_transform = camera_xformable.ComputeLocalToWorldTransform(0)
-            # 世界到相机的变换（逆矩阵）
+            # World to camera transform (inverse matrix)
             world_to_camera = camera_world_transform.GetInverse()
-            
-            # 获取相机参数
+
+            # Get camera parameters
             focal_length = camera.GetFocalLengthAttr().Get()  # mm
             h_aperture = camera.GetHorizontalApertureAttr().Get()  # mm
             v_aperture = camera.GetVerticalApertureAttr().Get()  # mm
-            
+
             if focal_length is None or h_aperture is None:
                 print(f" Warning: Camera parameters not available")
                 for path in prim_paths:
                     coords_2d[path] = None
                 return coords_2d
-            
-            # 如果 v_aperture 为 None，从宽高比计算
+
+            # If v_aperture is None, compute from aspect ratio
             if v_aperture is None or v_aperture == 0:
                 v_aperture = h_aperture * (image_height / image_width)
             
@@ -1072,52 +1072,52 @@ def run_kitchen_example(
                     coords_2d[path] = None
                     continue
                 
-                # 获取物体的世界坐标
+                # Get object's world coordinates
                 world_transform = xformable.ComputeLocalToWorldTransform(0)
                 world_pos = world_transform.ExtractTranslation()
-                
-                # 将世界坐标转换到相机坐标系
-                # 使用 TransformAffine 方法处理3D点
+
+                # Transform world coordinates to camera coordinate system
+                # Use TransformAffine method to process 3D points
                 world_pos_3d = Gf.Vec3d(world_pos[0], world_pos[1], world_pos[2])
                 camera_pos = world_to_camera.TransformAffine(world_pos_3d)
-                
-                # 相机坐标系中的位置
+
+                # Position in camera coordinate system
                 cam_x = camera_pos[0]
                 cam_y = camera_pos[1]
                 cam_z = camera_pos[2]
-                
-                # 相机看向 -Z，所以 z 应该是负的才能被看到
+
+                # Camera looks at -Z, so z must be negative to be visible
                 if cam_z >= 0:
-                    # 物体在相机后面
+                    # Object is behind the camera
                     print(f"   {path} is behind camera (z={cam_z:.2f})")
                     coords_2d[path] = None
                     continue
-                
-                # 透视投影（针孔相机模型）
-                # NDC 坐标 (归一化设备坐标)
+
+                # Perspective projection (pinhole camera model)
+                # NDC coordinates (normalized device coordinates)
                 ndc_x = (focal_length * cam_x) / (-cam_z * h_aperture / 2)
                 ndc_y = (focal_length * cam_y) / (-cam_z * v_aperture / 2)
-                
-                # NDC 范围是 [-1, 1]，转换到像素坐标
-                # 注意：y 轴在图像中是向下的
+
+                # NDC range is [-1, 1], convert to pixel coordinates
+                # Note: the y axis points downward in the image
                 pixel_x = int((ndc_x + 1) * 0.5 * image_width)
-                pixel_y = int((1 - ndc_y) * 0.5 * image_height)  # 翻转 Y
-                
-                # 检查是否在图像范围内
+                pixel_y = int((1 - ndc_y) * 0.5 * image_height)  # Flip Y
+
+                # Check if within image range
                 if 0 <= pixel_x < image_width and 0 <= pixel_y < image_height:
                     coords_2d[path] = [pixel_x, pixel_y]
                     print(f"   Projected {path}: world ({world_pos[0]:.1f}, {world_pos[1]:.1f}, {world_pos[2]:.1f}) -> pixel ({pixel_x}, {pixel_y})")
                 else:
                     print(f"   {path} projected outside image: ({pixel_x}, {pixel_y})")
-                    coords_2d[path] = [pixel_x, pixel_y]  # 仍然保存，即使在边界外
-            
+                    coords_2d[path] = [pixel_x, pixel_y]  # Still save, even if out of bounds
+
             return coords_2d
 
         def set_prims_visibility(prim_paths, visible: bool, prim_map=None):
             """
-            设置 prim 可见性。
-            - visible=True: 显示
-            - visible=False: 隐藏
+            Set prim visibility.
+            - visible=True: show
+            - visible=False: hide
             """
             changed = []
             for path in prim_paths:
@@ -1138,20 +1138,20 @@ def run_kitchen_example(
                 changed.append(path)
             return changed
 
-        # 13-15. 直接使用 USD API 随机化，不使用 Replicator trigger
-        # 这样我们完全控制何时执行随机化，避免 Z 补偿被覆盖
-        
+        # 13-15. Directly use USD API for randomization, do not use Replicator trigger
+        # This way we have full control over when randomization is executed, avoiding Z compensation being overridden
+
         frame_counter = [0]
         frame_coordinates = []
         frame_2d_coordinates = []
 
         def write_pair_output(pair_idx: int):
-            """每完成一个 pair 立即落盘，避免中断导致全部丢失。"""
+            """Write to disk immediately after each pair completes, to avoid losing everything on interruption."""
             record = pair_records[pair_idx]
             pair_dir = cam_out_dir / record["pair_id"]
             pair_dir.mkdir(parents=True, exist_ok=True)
 
-            # 采样顺序为「B(可见) -> A(隐藏)」，输出时映射为「A=隐藏后，B=隐藏前」
+            # Sampling order is "B(visible) -> A(hidden)", at output mapped to "A=after hide, B=before hide"
             coord_b_idx = pair_idx * 2
             coord_a_idx = pair_idx * 2 + 1
             frame_b_idx = pair_idx * 2
@@ -1166,7 +1166,7 @@ def run_kitchen_example(
                 selected_paths_for_pair = record.get("selected_prims", [])
                 record["coordinates"] = {}
                 for prim_path in selected_paths_for_pair:
-                    # add 任务：A 帧表示“隐藏后”，因此 A 坐标写 null；B 记录隐藏前坐标
+                    # add task: Frame A represents "after hide", so A coordinates are written as null; B records pre-hide coordinates
                     record["coordinates"][prim_path] = {
                         "world_coordinate_A": None,
                         "world_coordinate_B": coords_b.get(prim_path, None),
@@ -1176,7 +1176,7 @@ def run_kitchen_example(
             else:
                 print(f" ⚠️ Coordinates not available for pair {pair_idx}")
 
-            # 只在写当前 pair 时读取当前已落盘帧，避免依赖最终汇总阶段
+            # Only read currently written frames when writing the current pair, to avoid depending on the final aggregation stage
             rgb_frames = sorted(raw_dir.glob("rgb_*.png"))
             depth_frames = sorted(raw_dir.glob("distance_to_camera_*.npy"))
             if not depth_frames:
@@ -1218,8 +1218,8 @@ def run_kitchen_example(
             meta_path.write_text(json.dumps(metadata_record, indent=2))
             print(f" Created {record['pair_id']}: A=frame{frame_a_idx}, B=frame{frame_b_idx}")
         
-        # 预热步骤：运行多帧来刷新渲染器的时间累积缓存，消除鬼影
-        # 每次随机化后运行 3 帧让渲染器稳定，总共 5 次随机化 = 15 帧
+        # Warmup step: run multiple frames to refresh the renderer's temporal accumulation cache, eliminating ghosting
+        # Run 3 frames after each randomization to let the renderer stabilize, total 5 randomizations = 15 frames
         warmup_randomizations = 5
         warmup_steps_per_rand = 3
         if origin:
@@ -1230,9 +1230,9 @@ def run_kitchen_example(
         else:
             print(f" Running warmup: {warmup_randomizations} randomizations × {warmup_steps_per_rand} steps = {warmup_randomizations * warmup_steps_per_rand} frames...")
         
-        # Detach writer 在 warmup 期间，避免捕获这些帧
+        # Detach writer during warmup to avoid capturing these frames
         writer.detach()
-        
+
         for warmup_i in range(warmup_randomizations):
             if origin:
                 set_prims_visibility(valid_candidate_paths, True, prim_path_map)
@@ -1240,17 +1240,17 @@ def run_kitchen_example(
                 prim_z_map = manual_randomize_objects(pillow_prim_path_map, surface_bounds_list)
                 if use_z_compensation:
                     apply_z_compensation(prim_z_map, reverse_prim_map)
-            # 每次随机化后运行多帧让时间累积刷新
+            # After each randomization run multiple frames to let temporal accumulation refresh
             for _ in range(warmup_steps_per_rand):
                 rep.orchestrator.step()
-        
-        # 重新 attach writer 开始正式捕获
+
+        # Re-attach writer to start formal capture
         writer.attach(render_product)
         print(f" Warmup complete, writer re-attached.")
-        
-        # 16. 主渲染循环
-        # 每帧在捕获前先运行几帧刷新时间累积缓存，消除 A/B 帧之间的鬼影
-        flush_frames_before_capture = 6  # 捕获前刷新的帧数（增加到 6 帧）
+
+        # 16. Main render loop
+        # Before each capture, run a few frames to refresh the temporal accumulation cache, eliminating ghosting between A/B frames
+        flush_frames_before_capture = 6  # number of flush frames before capture (increased to 6)
         print(f" Running main render loop with {total_frames} frames...")
         print(f" Using {flush_frames_before_capture} flush frames before each capture to eliminate ghosting")
         
@@ -1258,7 +1258,7 @@ def run_kitchen_example(
             frame_counter[0] += 1
             print(f"\n ===== Frame {frame_idx} =====")
 
-            # 每个 pair（A/B 两帧）重新采样一次待处理 prim 集合
+            # Resample the prim set to process at the start of each pair (A/B frames)
             pair_idx = frame_idx // 2
             if frame_idx % 2 == 0:
                 sampled_paths = sample_pair_prims(valid_candidate_paths)
@@ -1267,7 +1267,7 @@ def run_kitchen_example(
                 pair_records[pair_idx]["num_changes"] = len(sampled_paths)
                 print(f" Pair {pair_idx}: selected {len(sampled_paths)} prim(s) to hide in A: {sampled_paths}")
 
-                # B 帧：先确保所有受控物体可见，再进行正常随机化
+                # Frame B: first ensure all controlled objects are visible, then perform normal randomization
                 set_prims_visibility(valid_candidate_paths, True, prim_path_map)
                 tracked_paths = list(prim_path_map.keys())
                 tracked_prim_map = prim_path_map
@@ -1275,7 +1275,7 @@ def run_kitchen_example(
                 if origin:
                     print(f" Pair {pair_idx}: B frame keeps original layout (origin mode)")
                 else:
-                    # B 仅随机化 pillow；lamp 保持当前原位
+                    # B only randomizes pillow; lamp keeps current original position
                     prim_z_map = manual_randomize_objects(pillow_prim_path_map, surface_bounds_list)
                     if use_z_compensation:
                         apply_z_compensation(prim_z_map, reverse_prim_map)
@@ -1283,66 +1283,66 @@ def run_kitchen_example(
                 sampled_paths = pair_records[pair_idx].get("selected_prims", [])
                 tracked_paths = list(prim_path_map.keys())
                 tracked_prim_map = prim_path_map
-                # A 帧：不再移动物体，只隐藏抽中的物体
+                # Frame A: no longer move objects, only hide the sampled objects
                 hidden_paths = set_prims_visibility(sampled_paths, False, prim_path_map)
                 print(f" Pair {pair_idx}: A frame hidden {len(hidden_paths)} prim(s): {hidden_paths}")
-            
-            # 步骤 3：刷新帧 - detach writer，运行几帧刷新时间累积缓存
+
+            # Step 3: flush frames - detach writer, run a few frames to refresh temporal accumulation cache
             writer.detach()
             for _ in range(flush_frames_before_capture):
                 rep.orchestrator.step()
-            
-            # 步骤 4：渲染并捕获 - attach writer，捕获最终帧
+
+            # Step 4: render and capture - attach writer, capture final frame
             writer.attach(render_product)
             rep.orchestrator.step()
             print(f" Frame {frame_idx}: rendered and captured (after {flush_frames_before_capture} flush frames)")
-            
-            # 验证捕获后物体的实际位置
-            print(f"[Verify] ===== 捕获后位置验证 =====")
+
+            # Verify the actual position of objects after capture
+            print(f"[Verify] ===== Post-capture position verification =====")
             for path in tracked_paths:
                 target_path = tracked_prim_map.get(path, path)
                 prim = stage.GetPrimAtPath(target_path)
                 if prim and prim.IsValid():
                     xformable = UsdGeom.Xformable(prim)
                     if xformable:
-                        # 获取 translate op 的值
+                        # Get translate op value
                         for op in xformable.GetOrderedXformOps():
                             if op.GetOpType() == UsdGeom.XformOp.TypeTranslate:
                                 pos = op.Get()
                                 print(f"[Verify] {path}: translate = ({pos[0]:.4f}, {pos[1]:.4f}, {pos[2]:.4f})")
                                 break
-                        # 计算 bbox
+                        # Compute bbox
                         bbox_cache = UsdGeom.BBoxCache(0, [UsdGeom.Tokens.default_])
                         world_bbox = bbox_cache.ComputeWorldBound(prim)
                         if world_bbox and not world_bbox.GetRange().IsEmpty():
                             bbox_min = world_bbox.GetRange().GetMin()
                             print(f"[Verify]   bbox_min_z = {bbox_min[2]:.4f}")
-            
-            # 渲染完成后记录世界坐标
+
+            # Record world coordinates after rendering completes
             current_coords = get_world_coordinates(tracked_paths, tracked_prim_map)
             frame_coordinates.append(current_coords)
-            
-            # 使用相机投影计算2D像素坐标
+
+            # Use camera projection to compute 2D pixel coordinates
             current_2d_coords = get_2d_center_coordinates_from_projection(
                 tracked_paths, cam_path, resolution[0], resolution[1], tracked_prim_map
             )
             frame_2d_coordinates.append(current_2d_coords)
             print(f" Frame {frame_idx}: recorded coords for {len(current_coords)} prims")
-            # 每完成一个 pair（两帧）就落盘一次，保证中途断开仍可使用已完成 pair
+            # Write to disk after each completed pair (two frames), so completed pairs remain usable on interruption
             if frame_idx % 2 == 1:
                 rep.orchestrator.wait_until_complete()
                 write_pair_output(pair_idx)
 
         print(f" Rendering complete. Recorded {len(frame_coordinates)} world coord frames, {len(frame_2d_coordinates)} 2D coord frames.")
-        
-        # 清理 raw 目录中的文件
+
+        # Clean up files in raw directory
         for leftover in raw_dir.glob("*.*"):
             leftover.unlink(missing_ok=True)
 
         writer.detach()
         render_product.destroy()
 
-    # 18. 完成
+    # 18. Done
     rep.orchestrator.wait_until_complete()
     print("\n ========== Done! ==========")
     print(f"Output saved to: {out_dir}")
@@ -1350,45 +1350,45 @@ def run_kitchen_example(
 
 def depth_npy_to_png(npy_path, png_path):
     """
-    将深度图的 npy 文件转换为可视化的 png 图像
+    Convert the depth map npy file to a visualizable png image
     """
     import numpy as np
     from PIL import Image
-    
+
     try:
-        # 加载深度数据
+        # Load depth data
         depth_data = np.load(npy_path)
-        
-        # 处理可能的多通道数据
+
+        # Handle possible multi-channel data
         if len(depth_data.shape) > 2:
             depth_data = depth_data[:, :, 0] if depth_data.shape[2] >= 1 else depth_data.squeeze()
-        
-        # 处理无效值（如 inf, nan）
+
+        # Handle invalid values (e.g. inf, nan)
         valid_mask = np.isfinite(depth_data)
         if not valid_mask.any():
             print(f"[depth_npy_to_png] Warning: No valid depth values in {npy_path}")
             return False
-        
-        # 获取有效值的范围
+
+        # Get the range of valid values
         min_val = depth_data[valid_mask].min()
         max_val = depth_data[valid_mask].max()
-        
-        # 归一化到 0-255 范围
+
+        # Normalize to 0-255 range
         if max_val > min_val:
             normalized = (depth_data - min_val) / (max_val - min_val)
         else:
             normalized = np.zeros_like(depth_data)
-        
-        # 将无效值设为 0
+
+        # Set invalid values to 0
         normalized[~valid_mask] = 0
-        
-        # 反转：近处亮，远处暗
+
+        # Invert: near is bright, far is dark
         normalized = 1.0 - normalized
-        
-        # 转换为 8-bit 图像
+
+        # Convert to 8-bit image
         depth_uint8 = (normalized * 255).astype(np.uint8)
-        
-        # 保存为 png
+
+        # Save as png
         img = Image.fromarray(depth_uint8)
         img.save(png_path)
         return True
