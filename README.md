@@ -4,21 +4,9 @@ This is the official code repository for the SceneTrans project.
 
 ## Example
 
-A representative A/B pair from the dataset (livingroom, `move` task):
+A snapshot of representative scenes and A/B pairs in the dataset:
 
-| Frame A | Frame B |
-| :---: | :---: |
-| ![Frame A](docs/images/A.png) | ![Frame B](docs/images/B.png) |
-
-Each pair is annotated with two complementary captions:
-
-**GT (Description)** — describes the change as observed between the two frames:
-
-> A small round plate was moved from the low media shelf beneath the TV to the small round nesting side table beside the sofa; it shifted to the right and downward in the view and remains upright, moved about 2.46 m. A rectangular TV box was moved from the low console shelf under the television to the top of the glass coffee table; it shifted right and down in the view and now lies flat on the coffee table, moved about 2.75 m. The book that was on the glass coffee table was relocated to the low console shelf next to the decorative vases on the left wall; it moved leftward and upward in the view and remains lying flat, moved about 2.32 m.
-
-**GT (Action)** — describes the change as an instruction to transform A into B:
-
-> Lift the plate from the media shelf beneath the TV and place it on the small round side table beside the sofa, moved about 2.46 m. Pick up the rectangular box from the console shelf under the TV and set it flat on the glass coffee table, moved about 2.75 m. Pick up the book from the glass coffee table and place it flat on the low console shelf next to the vases on the left wall, moved about 2.32 m.
+![Dataset overview](docs/images/dataset.png)
 
 ## 1. Directory Structure
 
